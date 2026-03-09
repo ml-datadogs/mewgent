@@ -1,0 +1,113 @@
+game_resolution:
+- 1024
+- 428
+scene_templates:
+  cat_stats_screen:
+    file: templates/cat_stats_header.png
+    match_threshold: 0.8
+    match_region:
+    - 0
+    - 0
+    - 400
+    - 100
+regions:
+  cat_name:
+    rect:
+    - 175
+    - 14
+    - 96
+    - 23
+    allowlist: ''
+    preprocess:
+    - grayscale
+    - threshold
+  cat_age:
+    rect:
+    - 170
+    - 42
+    - 34
+    - 12
+    allowlist: ''
+    preprocess:
+    - grayscale
+    - threshold
+  cat_level:
+    rect:
+    - 153
+    - 62
+    - 31
+    - 12
+    allowlist: ''
+    preprocess:
+    - grayscale
+    - threshold
+  stat_str:
+    rect:
+    - 154
+    - 75
+    - 66
+    - 20
+    allowlist: 0123456789
+    preprocess:
+    - grayscale
+    - threshold
+  stat_dex:
+    rect:
+    - 154
+    - 95
+    - 67
+    - 17
+    allowlist: 0123456789
+    preprocess:
+    - grayscale
+    - threshold
+  stat_con:
+    rect:
+    - 155
+    - 111
+    - 66
+    - 19
+    allowlist: 0123456789
+    preprocess:
+    - grayscale
+    - threshold
+  stat_int:
+    rect:
+    - 221
+    - 56
+    - 68
+    - 21
+    allowlist: 0123456789
+    preprocess:
+    - grayscale
+    - threshold
+  stat_spd:
+    rect:
+    - 220
+    - 76
+    - 69
+    - 19
+    allowlist: 0123456789
+    preprocess:
+    - grayscale
+    - threshold
+  stat_cha:
+    rect:
+    - 221
+    - 95
+    - 68
+    - 16
+    allowlist: 0123456789
+    preprocess:
+    - grayscale
+    - threshold
+  stat_lck:
+    rect:
+    - 224
+    - 112
+    - 66
+    - 19
+    allowlist: 0123456789
+    preprocess:
+    - grayscale
+    - threshold
