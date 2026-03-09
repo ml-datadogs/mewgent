@@ -5,6 +5,7 @@ Entry point: ``python -m src.main``
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -21,6 +22,39 @@ from src.vision.region_crop import RegionCropper
 from src.vision.scene_detect import SceneDetector
 
 log = logging.getLogger("mewgent.main")
+
+PIDFILE = PROJECT_ROOT / "data" / "mewgent.pid"
+
+
+def _kill_previous_instance() -> None:
+    """Kill any previously running Mewgent instance using the PID file."""
+    if not PIDFILE.exists():
+        return
+    try:
+        old_pid = int(PIDFILE.read_text().strip())
+        if old_pid == os.getpid():
+            return
+        import subprocess
+        subprocess.run(
+            ["taskkill", "/PID", str(old_pid), "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        log.info("Killed previous Mewgent instance (PID %d)", old_pid)
+        time.sleep(0.3)
+    except (ValueError, OSError):
+        pass
+    finally:
+        PIDFILE.unlink(missing_ok=True)
+
+
+def _write_pidfile() -> None:
+    PIDFILE.parent.mkdir(parents=True, exist_ok=True)
+    PIDFILE.write_text(str(os.getpid()))
+
+
+def _remove_pidfile() -> None:
+    PIDFILE.unlink(missing_ok=True)
 
 
 def _build_pipeline(cfg: AppConfig):
@@ -132,10 +166,16 @@ def main() -> None:
     setup_logging(level=cfg.logging.level, log_file=cfg.logging.file)
     log.info("Mewgent v%s starting", "0.1.0")
 
-    if "--headless" in sys.argv:
-        run_headless(cfg)
-    else:
-        run_gui(cfg)
+    _kill_previous_instance()
+    _write_pidfile()
+
+    try:
+        if "--headless" in sys.argv:
+            run_headless(cfg)
+        else:
+            run_gui(cfg)
+    finally:
+        _remove_pidfile()
 
 
 if __name__ == "__main__":

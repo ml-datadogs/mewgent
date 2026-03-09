@@ -1,7 +1,7 @@
 # Mewgent settings
 capture:
   window_title: "Mewgenics"
-  interval_ms: 1000
+  interval_ms: 100
   dpi_aware: true
 
 ocr:
@@ -13,8 +13,8 @@ database:
 
 logging:
   level: "INFO"
-  file: "mewgent.log"
+  file: "data/mewgent.log"
 
 debug:
-  save_screenshots: true
+  save_screenshots: false
   screenshots_dir: "debug_screenshots"

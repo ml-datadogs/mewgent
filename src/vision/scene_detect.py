@@ -42,7 +42,11 @@ class SceneDetector:
         """Check the frame against all loaded templates.
 
         Returns the name of the first matching scene, or None.
+        If no templates are loaded, returns 'cat_stats_screen' (skip detection).
         """
+        if not self._templates:
+            return "cat_stats_screen"
+
         for name, (tpl, threshold, region) in self._templates.items():
             x, y, w, h = region
             if w > 0 and h > 0:

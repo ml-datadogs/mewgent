@@ -21,11 +21,21 @@ class DuplicateGuard:
     3. DB UNIQUE constraint (final safety net, handled in SQLiteStore)
     """
 
-    def __init__(self, phash_threshold: int = 6, cache_size: int = 64) -> None:
+    def __init__(self, phash_threshold: int = 4, cache_size: int = 64) -> None:
         self._phash_threshold = phash_threshold
         self._last_frame_hash: imagehash.ImageHash | None = None
         self._seen_fingerprints: OrderedDict[str, bool] = OrderedDict()
         self._cache_size = cache_size
+        self._frame_skip_count = 0
+        self._last_phash_dist: int = -1
+
+    @property
+    def frame_skip_count(self) -> int:
+        return self._frame_skip_count
+
+    @property
+    def last_phash_dist(self) -> int:
+        return self._last_phash_dist
 
     def is_same_frame(self, frame: np.ndarray) -> bool:
         """Return True if the frame is perceptually identical to the last one."""
@@ -33,11 +43,17 @@ class DuplicateGuard:
         current_hash = imagehash.phash(pil)
 
         if self._last_frame_hash is not None:
-            dist = current_hash - self._last_frame_hash
-            if dist <= self._phash_threshold:
-                log.debug("Frame duplicate (phash distance=%d, threshold=%d)", dist, self._phash_threshold)
+            self._last_phash_dist = current_hash - self._last_frame_hash
+            if self._last_phash_dist <= self._phash_threshold:
+                self._frame_skip_count += 1
+                if self._frame_skip_count % 10 == 1:
+                    log.info("Frame unchanged (phash dist=%d, skipped %d in a row)",
+                             self._last_phash_dist, self._frame_skip_count)
                 return True
 
+        if self._frame_skip_count > 0:
+            log.info("New frame detected after %d unchanged frames", self._frame_skip_count)
+        self._frame_skip_count = 0
         self._last_frame_hash = current_hash
         return False
 
@@ -45,7 +61,7 @@ class DuplicateGuard:
         """Return True if these exact stats have already been recorded recently."""
         fp = stats.fingerprint()
         if fp in self._seen_fingerprints:
-            log.debug("Duplicate stats fingerprint: %s", fp)
+            log.info("Duplicate stats for '%s' -- already seen", stats.cat_name)
             return True
 
         self._seen_fingerprints[fp] = True

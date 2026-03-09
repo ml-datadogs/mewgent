@@ -47,7 +47,6 @@ class OCREngine:
 
         results = reader.readtext(image, **kwargs)
         text = " ".join(results).strip() if results else ""
-        log.debug("OCR result: '%s'  (allowlist='%s')", text, allowlist)
         return text
 
     def recognise_regions(
@@ -59,4 +58,5 @@ class OCREngine:
         for name, img in crops.items():
             al = alists.get(name, "")
             out[name] = self.recognise(img, allowlist=al)
+            log.info("  OCR %-12s -> '%s'", name, out[name])
         return out
