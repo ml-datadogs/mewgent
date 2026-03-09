@@ -17,6 +17,11 @@ __pycache__/
 
 # Application data
 data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.pid
+data/*.log
+data/*.log.*
 debug_screenshots/*.png
 *.log
 
