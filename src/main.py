@@ -10,16 +10,8 @@ import sys
 import time
 from pathlib import Path
 
-from src.capture.screen_grab import ScreenGrabber
-from src.capture.window_bind import WindowBinder
-from src.data.db import SQLiteStore
-from src.data.dedup import DuplicateGuard
-from src.data.stat_parser import parse_regions
 from src.utils.config_loader import PROJECT_ROOT, AppConfig, load_config
 from src.utils.logging_setup import setup_logging
-from src.vision.ocr_engine import OCREngine
-from src.vision.region_crop import RegionCropper
-from src.vision.scene_detect import SceneDetector
 
 log = logging.getLogger("mewgent.main")
 
@@ -59,6 +51,14 @@ def _remove_pidfile() -> None:
 
 def _build_pipeline(cfg: AppConfig):
     """Instantiate all pipeline components from config."""
+    from src.capture.screen_grab import ScreenGrabber
+    from src.capture.window_bind import WindowBinder
+    from src.data.db import SQLiteStore
+    from src.data.dedup import DuplicateGuard
+    from src.vision.ocr_engine import OCREngine
+    from src.vision.region_crop import RegionCropper
+    from src.vision.scene_detect import SceneDetector
+
     binder = WindowBinder(
         title=cfg.capture.window_title,
         dpi_aware=cfg.capture.dpi_aware,
@@ -85,6 +85,8 @@ def _build_pipeline(cfg: AppConfig):
 
 def run_headless(cfg: AppConfig) -> None:
     """Main capture loop without GUI — useful for testing the pipeline."""
+    from src.data.stat_parser import parse_regions
+
     binder, grabber, detector, cropper, ocr, db, dedup = _build_pipeline(cfg)
 
     allowlists = {name: rdef.allowlist for name, rdef in cfg.regions.regions.items()}
@@ -161,10 +163,33 @@ def run_gui(cfg: AppConfig) -> None:
     sys.exit(app.exec())
 
 
+def run_dev_ui(cfg: AppConfig) -> None:
+    """Launch the overlay with mock data for UI development.
+
+    No capture pipeline, no Win32 calls — works on macOS and Windows.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    from src.ui.overlay import MewgentOverlay
+
+    app = QApplication(sys.argv)
+
+    stub_pipeline = (None, None, None, None, None, None, None)
+
+    overlay = MewgentOverlay(cfg, stub_pipeline, dev_mode=True)
+    overlay.show()
+    log.info("Dev UI mode active — showing overlay with mock data")
+    sys.exit(app.exec())
+
+
 def main() -> None:
     cfg = load_config()
     setup_logging(level=cfg.logging.level, log_file=cfg.logging.file)
     log.info("Mewgent v%s starting", "0.1.0")
+
+    if "--dev-ui" in sys.argv:
+        run_dev_ui(cfg)
+        return
 
     _kill_previous_instance()
     _write_pidfile()

@@ -1,15 +1,22 @@
 from __future__ import annotations
 
-import ctypes
 import logging
+import sys
 import time
-
-import win32gui
 
 log = logging.getLogger("mewgent.capture.window_bind")
 
+_IS_WIN = sys.platform == "win32"
+
+if _IS_WIN:
+    import ctypes
+
+    import win32gui
+
 
 def _set_dpi_aware() -> None:
+    if not _IS_WIN:
+        return
     try:
         ctypes.windll.user32.SetProcessDPIAware()
     except Exception:
@@ -31,6 +38,10 @@ class WindowBinder:
 
     def find(self) -> int | None:
         """Search for the window and return its HWND, or None."""
+        if not _IS_WIN:
+            self._hwnd = None
+            return None
+
         found: list[int] = []
 
         def _cb(hwnd: int, _extra: object) -> bool:
@@ -53,7 +64,7 @@ class WindowBinder:
 
     def get_rect(self) -> tuple[int, int, int, int] | None:
         """Return (left, top, right, bottom) of the window client area."""
-        if self._hwnd is None:
+        if self._hwnd is None or not _IS_WIN:
             return None
         try:
             return win32gui.GetWindowRect(self._hwnd)

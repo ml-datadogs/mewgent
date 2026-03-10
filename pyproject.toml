@@ -6,12 +6,16 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "PySide6>=6.6",
+    "pyyaml>=6.0",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+pipeline = [
     "opencv-contrib-python>=4.9",
     "easyocr>=1.7",
     "imagehash>=4.3",
-    "pywin32>=306",
-    "pyyaml>=6.0",
-    "Pillow>=10.0",
+    "pywin32>=306; sys_platform == 'win32'",
     "numpy>=1.26",
     "torch>=2.2",
     "torchvision>=0.17",
@@ -24,8 +28,12 @@ override-dependencies = [
 ]
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu121" }]
-torchvision = [{ index = "pytorch-cu121" }]
+torch = [
+    { index = "pytorch-cu121", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+torchvision = [
+    { index = "pytorch-cu121", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu121"

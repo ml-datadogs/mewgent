@@ -1,36 +1,50 @@
 from __future__ import annotations
 
-import ctypes
-import ctypes.wintypes
 import logging
+import math
+import random
+import sys
 import time
 from dataclasses import dataclass
 from typing import Any
 
-from PySide6.QtCore import QSettings, QThread, QTimer, Qt, Signal
-from PySide6.QtGui import QAction, QFont, QIcon, QPixmap
+from PySide6.QtCore import QObject, QPointF, QSettings, QThread, QTimer, Qt, Signal
+from PySide6.QtGui import (
+    QAction,
+    QBrush,
+    QColor,
+    QFont,
+    QFontMetrics,
+    QIcon,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QPolygonF,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
+    QPushButton,
     QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
 
-from src.capture.screen_grab import ScreenGrabber
-from src.capture.window_bind import WindowBinder
-from src.data.db import SQLiteStore
-from src.data.dedup import DuplicateGuard
-from src.data.stat_parser import CatStats, parse_regions
+from src.data.collars import COLLARS, compute_collar_scores
+from src.data.stat_parser import CatStats
 from src.utils.config_loader import PROJECT_ROOT, AppConfig
-from src.vision.ocr_engine import OCREngine
-from src.vision.region_crop import RegionCropper
-from src.vision.scene_detect import SceneDetector
 
 log = logging.getLogger("mewgent.ui.overlay")
+
+_IS_WIN = sys.platform == "win32"
+
+if _IS_WIN:
+    import ctypes
+    import ctypes.wintypes
 
 HOTKEY_ID_TOGGLE = 1
 MOD_ALT = 0x0001
@@ -38,10 +52,34 @@ VK_M = 0x4D
 
 LOGO_PATH = str(PROJECT_ROOT / "images" / "mewgent-logo.jpg")
 
-FONT_MONO = "Consolas"
-FONT_UI = "Segoe UI"
+if _IS_WIN:
+    FONT_MONO = "Consolas"
+    FONT_UI = "Segoe UI"
+else:
+    FONT_MONO = "Menlo"
+    FONT_UI = "Helvetica Neue"
+
+CLR_BG = "rgba(26, 26, 26, 235)"
+CLR_BORDER = "#5A534D"
 CLR_DIM = "#8C847C"
+CLR_TEXT = "#E5E0D8"
+CLR_ACCENT = "#B8A99A"
 CLR_BG_DIM = "rgba(140,132,124,30)"
+CLR_BG_CARD = "rgba(255,255,255,8)"
+
+STAT_KEYS = ["STR", "DEX", "CON", "INT", "SPD", "CHA", "LCK"]
+STAT_ATTRS = ["stat_str", "stat_dex", "stat_con", "stat_int", "stat_spd", "stat_cha", "stat_lck"]
+STAT_COLORS = {
+    "STR": "#C24D4D",
+    "DEX": "#D4AF37",
+    "CON": "#C24D4D",
+    "INT": "#5B7B8E",
+    "SPD": "#D4AF37",
+    "CHA": "#7A8B6C",
+    "LCK": "#D4AF37",
+}
+
+MAX_BAR_W = 140
 
 
 @dataclass
@@ -55,8 +93,108 @@ class DebugInfo:
     last_action: str = ""
 
 
+# ── Radar chart widget ───────────────────────────────────────────────
+
+class RadarChartWidget(QWidget):
+    """QPainter-based 7-axis spider/radar chart for cat stats."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(280, 260)
+        self._values: list[int] = [0] * 7
+        self._max_val: int = 20
+
+    def update_stats(self, stats: CatStats) -> None:
+        self._values = [getattr(stats, a) for a in STAT_ATTRS]
+        self._max_val = max(max(self._values), 1)
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w, h = self.width(), self.height()
+        cx, cy = w / 2, h / 2 - 5
+        radius = 75
+        painter.setClipRect(self.rect())
+        n = 7
+        angle_step = 2 * math.pi / n
+        start_angle = -math.pi / 2
+
+        def vertex(i: int, r: float) -> QPointF:
+            a = start_angle + i * angle_step
+            return QPointF(cx + r * math.cos(a), cy + r * math.sin(a))
+
+        grid_pen = QPen(QColor(140, 132, 124, 40), 1)
+        painter.setPen(grid_pen)
+
+        for frac in (0.25, 0.5, 0.75, 1.0):
+            ring = QPolygonF([vertex(i, radius * frac) for i in range(n)])
+            ring.append(ring[0])
+            painter.drawPolyline(ring)
+
+        for i in range(n):
+            painter.drawLine(QPointF(cx, cy), vertex(i, radius))
+
+        label_font = QFont(FONT_MONO, 8, QFont.Weight.Bold)
+        painter.setFont(label_font)
+        fm = QFontMetrics(label_font)
+
+        for i, key in enumerate(STAT_KEYS):
+            pt = vertex(i, radius + 18)
+            val = self._values[i]
+            text = f"{key} {val}"
+            tw = fm.horizontalAdvance(text)
+            th = fm.height()
+
+            tx = pt.x() - tw / 2
+            ty = pt.y()
+
+            angle = start_angle + i * angle_step
+            if angle > 0.1:
+                ty += th
+            elif angle > -0.1:
+                ty += th / 2
+
+            painter.setPen(QColor(STAT_COLORS.get(key, CLR_TEXT)))
+            painter.drawText(QPointF(tx, ty), text)
+
+        if any(v > 0 for v in self._values):
+            points = QPolygonF()
+            for i in range(n):
+                frac = self._values[i] / self._max_val if self._max_val > 0 else 0
+                points.append(vertex(i, radius * frac))
+            points.append(points[0])
+
+            fill_color = QColor(184, 169, 154, 50)
+            stroke_color = QColor(184, 169, 154, 180)
+
+            path = QPainterPath()
+            path.addPolygon(points)
+            painter.fillPath(path, QBrush(fill_color))
+            painter.setPen(QPen(stroke_color, 1.5))
+            painter.drawPolyline(points)
+
+            dot_pen = QPen(Qt.PenStyle.NoPen)
+            for i in range(n):
+                frac = self._values[i] / self._max_val if self._max_val > 0 else 0
+                pt = vertex(i, radius * frac)
+                clr = QColor(STAT_COLORS.get(STAT_KEYS[i], CLR_TEXT))
+                clr.setAlpha(220)
+                painter.setPen(dot_pen)
+                painter.setBrush(QBrush(clr))
+                painter.drawEllipse(pt, 3, 3)
+
+        painter.end()
+
+
+# ── Win32-only hotkey thread ─────────────────────────────────────────
+
 class HotkeyThread(QThread):
-    """Listen for a global hotkey (Alt+M) even when the game has focus."""
+    """Listen for a global hotkey (Alt+M) even when the game has focus.
+
+    Only functional on Windows; on other platforms ``start()`` is a no-op.
+    """
 
     triggered = Signal()
 
@@ -65,6 +203,9 @@ class HotkeyThread(QThread):
         self._thread_id: int | None = None
 
     def run(self) -> None:
+        if not _IS_WIN:
+            return
+
         user32 = ctypes.windll.user32
         self._thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
 
@@ -85,19 +226,22 @@ class HotkeyThread(QThread):
 
     def stop(self) -> None:
         """Post WM_QUIT to break the GetMessageW loop."""
-        if self._thread_id is not None:
-            WM_QUIT = 0x0012
-            ctypes.windll.user32.PostThreadMessageW(
-                self._thread_id, WM_QUIT, 0, 0,
-            )
+        if not _IS_WIN or self._thread_id is None:
+            return
+        WM_QUIT = 0x0012
+        ctypes.windll.user32.PostThreadMessageW(
+            self._thread_id, WM_QUIT, 0, 0,
+        )
 
+
+# ── Real capture worker ──────────────────────────────────────────────
 
 class CaptureWorker(QThread):
     """Background thread running the capture -> OCR -> dedup pipeline."""
 
-    stats_ready = Signal(object)    # CatStats
-    status_changed = Signal(str)    # status text
-    debug_updated = Signal(object)  # DebugInfo
+    stats_ready = Signal(object)
+    status_changed = Signal(str)
+    debug_updated = Signal(object)
 
     def __init__(
         self,
@@ -184,6 +328,8 @@ class CaptureWorker(QThread):
 
             crops = self._cropper.crop_all(frame)
             ocr_results = self._ocr.recognise_regions(crops, self._allowlists)
+
+            from src.data.stat_parser import parse_regions
             stats = parse_regions(ocr_results)
             self._dbg.raw_ocr = ocr_results
 
@@ -213,22 +359,113 @@ class CaptureWorker(QThread):
         self._db.close()
 
 
+# ── Mock capture worker (dev-ui mode) ────────────────────────────────
+
+_SAMPLE_CATS = [
+    CatStats(cat_name="Whiskers", stat_str=12, stat_dex=8, stat_con=15,
+             stat_int=6, stat_spd=10, stat_cha=14, stat_lck=3),
+    CatStats(cat_name="Mittens", stat_str=6, stat_dex=18, stat_con=9,
+             stat_int=14, stat_spd=16, stat_cha=5, stat_lck=11),
+    CatStats(cat_name="Chairman Meow", stat_str=20, stat_dex=4, stat_con=18,
+             stat_int=20, stat_spd=2, stat_cha=20, stat_lck=7),
+    CatStats(cat_name="Purrlock Holmes", stat_str=8, stat_dex=12, stat_con=10,
+             stat_int=19, stat_spd=11, stat_cha=9, stat_lck=15),
+    CatStats(cat_name="Catrick Swayze", stat_str=14, stat_dex=15, stat_con=12,
+             stat_int=7, stat_spd=17, stat_cha=16, stat_lck=5),
+]
+
+
+class MockCaptureWorker(QObject):
+    """Timer-driven fake pipeline that emits sample data for UI development."""
+
+    stats_ready = Signal(object)
+    status_changed = Signal(str)
+    debug_updated = Signal(object)
+
+    def __init__(self, interval_ms: int = 2000, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._index = 0
+        self._scan = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(interval_ms)
+        self._timer.timeout.connect(self._tick)
+
+    def start(self) -> None:
+        self.status_changed.emit("DEV MODE — mock data active")
+        self._timer.start()
+
+    def stop(self) -> None:
+        self._timer.stop()
+
+    def wait(self, _timeout_ms: int = 0) -> None:
+        pass
+
+    def _tick(self) -> None:
+        cat = _SAMPLE_CATS[self._index % len(_SAMPLE_CATS)]
+        self._index += 1
+        self._scan += 1
+
+        self.stats_ready.emit(cat)
+        self.status_changed.emit(f"[mock] Saved: {cat.cat_name}")
+
+        raw_ocr = {
+            "cat_name": cat.cat_name,
+            "cat_age": str(random.randint(1, 9)),
+            "cat_level": str(random.randint(1, 50)),
+            "stat_str": str(cat.stat_str),
+            "stat_dex": str(cat.stat_dex),
+            "stat_con": str(cat.stat_con),
+            "stat_int": str(cat.stat_int),
+            "stat_spd": str(cat.stat_spd),
+            "stat_cha": str(cat.stat_cha),
+            "stat_lck": str(cat.stat_lck),
+        }
+
+        self.debug_updated.emit(DebugInfo(
+            scan_number=self._scan,
+            frame_skips=random.randint(0, 5),
+            phash_dist=random.randint(0, 20),
+            pipeline_state="saved",
+            raw_ocr=raw_ocr,
+            last_action=f"mock: {cat.cat_name}",
+        ))
+
+
+# ── Helpers ──────────────────────────────────────────────────────────
+
+def _make_separator() -> QLabel:
+    sep = QLabel()
+    sep.setFixedHeight(1)
+    sep.setStyleSheet(f"background: {CLR_BORDER}; margin-top: 2px; margin-bottom: 2px;")
+    return sep
+
+
+# ── Main overlay window ──────────────────────────────────────────────
+
 class MewgentOverlay(QMainWindow):
     """Always-on-top overlay showing the latest scanned cat stats."""
 
-    def __init__(self, cfg: AppConfig, pipeline: tuple, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        cfg: AppConfig,
+        pipeline: tuple,
+        parent: QWidget | None = None,
+        *,
+        dev_mode: bool = False,
+    ) -> None:
         super().__init__(parent)
         self._cfg = cfg
-        self._db: SQLiteStore = pipeline[5]  # index 5 in the pipeline tuple
+        self._dev_mode = dev_mode
+        self._db = pipeline[5] if not dev_mode else None
 
-        self.setWindowTitle("Mewgent")
+        self.setWindowTitle("Mewgent" + (" [DEV]" if dev_mode else ""))
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMinimumSize(380, 420)
+        self.setMinimumSize(340, 720)
 
         self._logo_icon = QIcon(LOGO_PATH)
         self.setWindowIcon(self._logo_icon)
@@ -237,7 +474,10 @@ class MewgentOverlay(QMainWindow):
         self._build_ui()
         self._setup_tray()
 
-        self._worker = CaptureWorker(cfg, pipeline, self)
+        if dev_mode:
+            self._worker = MockCaptureWorker(interval_ms=2000, parent=self)
+        else:
+            self._worker = CaptureWorker(cfg, pipeline, self)
         self._worker.stats_ready.connect(self._on_stats)
         self._worker.status_changed.connect(self._on_status)
         self._worker.debug_updated.connect(self._on_debug)
@@ -248,136 +488,274 @@ class MewgentOverlay(QMainWindow):
         self._topmost_timer.start(1000)
         self._force_topmost()
 
-        self._hotkey_thread = HotkeyThread(self)
-        self._hotkey_thread.triggered.connect(self._toggle_overlay)
-        self._hotkey_thread.start()
+        self._hotkey_thread: HotkeyThread | None = None
+        if _IS_WIN and not dev_mode:
+            self._hotkey_thread = HotkeyThread(self)
+            self._hotkey_thread.triggered.connect(self._toggle_overlay)
+            self._hotkey_thread.start()
 
     # ── UI construction ──────────────────────────────────────────────
 
     def _build_ui(self) -> None:
         central = QWidget()
         central.setObjectName("central")
-        central.setStyleSheet("""
-            #central {
-                background: rgba(26, 26, 26, 228);
-                border: 2px solid #8C847C;
-                border-radius: 8px;
-            }
+        central.setStyleSheet(f"""
+            #central {{
+                background: {CLR_BG};
+                border: 1px solid {CLR_BORDER};
+                border-radius: 10px;
+            }}
         """)
         self.setCentralWidget(central)
 
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(14, 10, 14, 10)
-        layout.setSpacing(4)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(16, 10, 16, 10)
+        root.setSpacing(6)
 
-        # Title bar row (draggable)
-        title_row = QHBoxLayout()
+        self._build_title_bar(root)
+        root.addWidget(_make_separator())
+        self._build_cat_header(root)
+        self._build_radar(root)
+        self._build_collar_panel(root)
+        root.addWidget(_make_separator())
+        self._build_status_bar(root)
+        root.addWidget(_make_separator())
+        self._build_debug_panel(root)
+
+    # ── Title bar ────────────────────────────────────────────────────
+
+    def _build_title_bar(self, layout: QVBoxLayout) -> None:
+        row = QHBoxLayout()
+        row.setSpacing(6)
 
         logo_label = QLabel()
-        logo_pixmap = QPixmap(LOGO_PATH).scaled(
-            22, 22,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        logo_label.setPixmap(logo_pixmap)
-        title_row.addWidget(logo_label)
+        pix = QPixmap(LOGO_PATH)
+        if not pix.isNull():
+            logo_label.setPixmap(pix.scaled(
+                20, 20,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
+        row.addWidget(logo_label)
 
-        title_label = QLabel("Mewgent")
-        title_label.setFont(QFont(FONT_UI, 10, QFont.Weight.Bold))
-        title_label.setStyleSheet("color: #B8A99A;")
-        title_row.addWidget(title_label)
-        title_row.addStretch()
+        title = QLabel("Mewgent")
+        title.setFont(QFont(FONT_UI, 10, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {CLR_ACCENT};")
+        row.addWidget(title)
+        row.addStretch()
 
-        hotkey_hint = QLabel("Alt+M")
-        hotkey_hint.setFont(QFont(FONT_MONO, 8))
-        hotkey_hint.setStyleSheet(
-            f"color: {CLR_DIM}; background: rgba(140,132,124,40); "
-            "border-radius: 3px; padding: 1px 4px;"
-        )
-        title_row.addWidget(hotkey_hint)
-        layout.addLayout(title_row)
+        if _IS_WIN:
+            hotkey_hint = QLabel("Alt+M")
+            hotkey_hint.setFont(QFont(FONT_MONO, 7))
+            hotkey_hint.setStyleSheet(
+                f"color: {CLR_DIM}; background: {CLR_BG_DIM}; "
+                "border-radius: 3px; padding: 1px 5px;"
+            )
+            row.addWidget(hotkey_hint)
 
-        # Separator line
-        sep = QLabel()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background: {CLR_DIM};")
-        layout.addWidget(sep)
+        close_btn = QPushButton("\u2715")
+        close_btn.setFixedSize(20, 20)
+        close_btn.setFont(QFont(FONT_UI, 9))
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                color: {CLR_DIM}; background: transparent; border: none;
+                border-radius: 10px;
+            }}
+            QPushButton:hover {{
+                color: {CLR_TEXT}; background: rgba(255,255,255,20);
+            }}
+        """)
+        close_btn.clicked.connect(self._quit)
+        row.addWidget(close_btn)
 
-        # Cat name
+        layout.addLayout(row)
+
+    # ── Cat name ─────────────────────────────────────────────────────
+
+    def _build_cat_header(self, layout: QVBoxLayout) -> None:
         self._name_label = QLabel("--")
-        self._name_label.setFont(QFont(FONT_UI, 14, QFont.Weight.Bold))
-        self._name_label.setStyleSheet("color: #E5E0D8; margin-top: 4px;")
+        self._name_label.setFont(QFont(FONT_UI, 16, QFont.Weight.Bold))
+        self._name_label.setStyleSheet(f"color: {CLR_TEXT};")
+        self._name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._name_label)
 
-        # Stats grid
-        self._stat_labels: dict[str, QLabel] = {}
-        stat_names = ["STR", "DEX", "CON", "INT", "SPD", "CHA", "LCK"]
+    # ── Radar chart ──────────────────────────────────────────────────
 
-        stat_colors = {
-            "STR": "#C24D4D",
-            "DEX": "#D4AF37",
-            "CON": "#C24D4D",
-            "INT": "#5B7B8E",
-            "SPD": "#D4AF37",
-            "CHA": "#7A8B6C",
-            "LCK": "#D4AF37",
-        }
+    def _build_radar(self, layout: QVBoxLayout) -> None:
+        card = QWidget()
+        card.setObjectName("radarCard")
+        card.setStyleSheet(f"""
+            #radarCard {{
+                background: {CLR_BG_CARD};
+                border: 1px solid rgba(255,255,255,6);
+                border-radius: 8px;
+            }}
+        """)
+        card_lay = QVBoxLayout(card)
+        card_lay.setContentsMargins(8, 6, 8, 6)
+        card_lay.setSpacing(0)
 
-        row1 = QHBoxLayout()
-        for s in stat_names[:3]:
-            lbl = self._make_stat_label(s, "--", stat_colors.get(s, "#E5E0D8"))
-            self._stat_labels[s] = lbl
-            row1.addWidget(lbl)
-        layout.addLayout(row1)
+        self._radar = RadarChartWidget(card)
+        inner = QHBoxLayout()
+        inner.addStretch()
+        inner.addWidget(self._radar)
+        inner.addStretch()
+        card_lay.addLayout(inner)
 
-        row2 = QHBoxLayout()
-        for s in stat_names[3:6]:
-            lbl = self._make_stat_label(s, "--", stat_colors.get(s, "#E5E0D8"))
-            self._stat_labels[s] = lbl
-            row2.addWidget(lbl)
-        layout.addLayout(row2)
+        layout.addWidget(card)
 
-        row3 = QHBoxLayout()
-        lbl = self._make_stat_label(stat_names[6], "--", stat_colors.get("LCK", "#E5E0D8"))
-        self._stat_labels[stat_names[6]] = lbl
-        row3.addWidget(lbl)
-        row3.addStretch()
-        layout.addLayout(row3)
+    # ── Collar suitability panel ─────────────────────────────────────
 
-        # Separator
-        sep2 = QLabel()
-        sep2.setFixedHeight(1)
-        sep2.setStyleSheet("background: rgba(140,132,124,80);")
-        layout.addWidget(sep2)
+    def _build_collar_panel(self, layout: QVBoxLayout) -> None:
+        card = QWidget()
+        card.setObjectName("collarCard")
+        card.setStyleSheet(f"""
+            #collarCard {{
+                background: {CLR_BG_CARD};
+                border: 1px solid rgba(255,255,255,6);
+                border-radius: 8px;
+            }}
+        """)
+        card_lay = QVBoxLayout(card)
+        card_lay.setContentsMargins(10, 8, 10, 8)
+        card_lay.setSpacing(3)
 
-        # Status bar
+        header = QLabel("COLLAR FIT")
+        header.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
+        header.setStyleSheet(f"color: {CLR_ACCENT}; margin-bottom: 2px;")
+        card_lay.addWidget(header)
+
+        self._collar_container = QVBoxLayout()
+        self._collar_container.setSpacing(3)
+
+        self._collar_rows: list[dict[str, Any]] = []
+        for collar in COLLARS:
+            row_widget = QWidget()
+            row_widget.setStyleSheet("border-radius: 4px;")
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(6, 3, 6, 3)
+            row_layout.setSpacing(6)
+
+            dot = QLabel("\u25CF")
+            dot.setFixedWidth(12)
+            dot.setStyleSheet(f"color: {collar.color}; font-size: 10px;")
+            row_layout.addWidget(dot)
+
+            name_lbl = QLabel(collar.name)
+            name_lbl.setFont(QFont(FONT_UI, 8))
+            name_lbl.setStyleSheet(f"color: {CLR_TEXT};")
+            name_lbl.setFixedWidth(85)
+            row_layout.addWidget(name_lbl)
+
+            bar_bg = QWidget()
+            bar_bg.setFixedHeight(8)
+            bar_bg.setFixedWidth(MAX_BAR_W)
+            bar_bg.setStyleSheet(
+                f"background: {CLR_BG_DIM}; border-radius: 4px;"
+            )
+
+            bar_fill = QWidget(bar_bg)
+            bar_fill.setFixedHeight(8)
+            bar_fill.setFixedWidth(0)
+            bar_fill.setStyleSheet(
+                f"background: {collar.color}; border-radius: 4px;"
+            )
+
+            row_layout.addWidget(bar_bg)
+
+            score_lbl = QLabel("--")
+            score_lbl.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
+            score_lbl.setStyleSheet(f"color: {CLR_DIM};")
+            score_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            score_lbl.setFixedWidth(38)
+            row_layout.addWidget(score_lbl)
+
+            self._collar_rows.append({
+                "widget": row_widget,
+                "dot": dot,
+                "name": name_lbl,
+                "bar_bg": bar_bg,
+                "bar_fill": bar_fill,
+                "score": score_lbl,
+            })
+            self._collar_container.addWidget(row_widget)
+
+        card_lay.addLayout(self._collar_container)
+        layout.addWidget(card)
+
+    def _update_collar_scores(self, stats: CatStats) -> None:
+        ranked = compute_collar_scores(stats)
+        top_score = ranked[0][1] if ranked else 0
+
+        for i, (collar, score) in enumerate(ranked):
+            row = self._collar_rows[i]
+
+            row["dot"].setStyleSheet(f"color: {collar.color}; font-size: 10px;")
+            row["name"].setText(collar.name)
+            row["score"].setText(f"{score:.1f}")
+
+            frac = score / top_score if top_score > 0 else 0
+            bar_w = max(int(frac * MAX_BAR_W), 2)
+            row["bar_fill"].setFixedWidth(bar_w)
+            row["bar_fill"].setStyleSheet(
+                f"background: {collar.color}; border-radius: 4px;"
+            )
+
+            if score == top_score:
+                row["name"].setStyleSheet(f"color: {CLR_TEXT}; font-weight: bold;")
+                row["score"].setStyleSheet(f"color: {CLR_TEXT}; font-weight: bold;")
+                row["widget"].setStyleSheet(
+                    f"background: {CLR_BG_CARD}; border-radius: 4px;"
+                )
+            else:
+                row["name"].setStyleSheet(f"color: {CLR_TEXT};")
+                row["score"].setStyleSheet(f"color: {CLR_DIM};")
+                row["widget"].setStyleSheet("border-radius: 4px;")
+
+    # ── Status bar ───────────────────────────────────────────────────
+
+    def _build_status_bar(self, layout: QVBoxLayout) -> None:
         self._status_label = QLabel("Starting...")
-        self._status_label.setFont(QFont(FONT_UI, 9))
-        self._status_label.setStyleSheet(f"color: {CLR_DIM}; margin-top: 2px;")
+        self._status_label.setFont(QFont(FONT_UI, 8))
+        self._status_label.setStyleSheet(f"color: {CLR_DIM};")
+        self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._status_label)
 
-        self._count_label = QLabel("Cats saved: 0")
-        self._count_label.setFont(QFont(FONT_UI, 9))
-        self._count_label.setStyleSheet(f"color: {CLR_DIM};")
-        layout.addWidget(self._count_label)
+    # ── Collapsible debug panel ──────────────────────────────────────
 
-        # ── Debug panel ──────────────────────────────────────────────
-        self._build_debug_panel(layout)
+    def _build_debug_panel(self, layout: QVBoxLayout) -> None:
+        header_row = QHBoxLayout()
+        header_row.setSpacing(4)
 
-    def _build_debug_panel(self, parent_layout: QVBoxLayout) -> None:
-        sep3 = QLabel()
-        sep3.setFixedHeight(1)
-        sep3.setStyleSheet(f"background: {CLR_DIM}; margin-top: 4px;")
-        parent_layout.addWidget(sep3)
+        self._debug_chevron = QLabel("\u25B6")
+        self._debug_chevron.setFont(QFont(FONT_MONO, 9))
+        self._debug_chevron.setStyleSheet(f"color: {CLR_DIM};")
+        self._debug_chevron.setFixedWidth(14)
+        header_row.addWidget(self._debug_chevron)
 
         debug_title = QLabel("DEBUG")
-        debug_title.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
-        debug_title.setStyleSheet("color: #5B7B8E; margin-top: 2px;")
-        parent_layout.addWidget(debug_title)
+        debug_title.setFont(QFont(FONT_MONO, 9, QFont.Weight.Bold))
+        debug_title.setStyleSheet("color: #5B7B8E;")
+        header_row.addWidget(debug_title)
+        header_row.addStretch()
 
-        dbg_style = f"color: #B8A99A; font-family: {FONT_MONO}; font-size: 9px;"
+        header_widget = QWidget()
+        header_widget.setLayout(header_row)
+        header_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        header_widget.setStyleSheet("""
+            QWidget { padding: 2px 0; }
+            QWidget:hover { background: rgba(255,255,255,8); border-radius: 4px; }
+        """)
+        header_widget.mousePressEvent = lambda _e: self._toggle_debug()
+        layout.addWidget(header_widget)
 
-        # Pipeline state row
+        self._debug_content = QWidget()
+        dbg_layout = QVBoxLayout(self._debug_content)
+        dbg_layout.setContentsMargins(0, 4, 0, 0)
+        dbg_layout.setSpacing(4)
+
+        dbg_style = f"color: {CLR_ACCENT}; font-family: {FONT_MONO}; font-size: 12px;"
+
         r1 = QHBoxLayout()
         r1.setSpacing(8)
         self._dbg_state_label = QLabel("State: idle")
@@ -387,9 +765,8 @@ class MewgentOverlay(QMainWindow):
         self._dbg_scan_label = QLabel("Scan: 0")
         self._dbg_scan_label.setStyleSheet(dbg_style)
         r1.addWidget(self._dbg_scan_label)
-        parent_layout.addLayout(r1)
+        dbg_layout.addLayout(r1)
 
-        # Frame dedup row
         r2 = QHBoxLayout()
         r2.setSpacing(8)
         self._dbg_phash_label = QLabel("pHash dist: --")
@@ -399,29 +776,27 @@ class MewgentOverlay(QMainWindow):
         self._dbg_skips_label = QLabel("Frame skips: 0")
         self._dbg_skips_label.setStyleSheet(dbg_style)
         r2.addWidget(self._dbg_skips_label)
-        parent_layout.addLayout(r2)
+        dbg_layout.addLayout(r2)
 
-        # Last action
         self._dbg_action_label = QLabel("Action: --")
         self._dbg_action_label.setStyleSheet(dbg_style)
-        parent_layout.addWidget(self._dbg_action_label)
+        dbg_layout.addWidget(self._dbg_action_label)
 
-        # Raw OCR section
         ocr_title = QLabel("Raw OCR:")
-        ocr_title.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
+        ocr_title.setFont(QFont(FONT_MONO, 10, QFont.Weight.Bold))
         ocr_title.setStyleSheet("color: #5B7B8E; margin-top: 4px;")
-        parent_layout.addWidget(ocr_title)
+        dbg_layout.addWidget(ocr_title)
 
         ocr_box = QWidget()
         ocr_box.setStyleSheet(
             f"background: {CLR_BG_DIM}; border-radius: 4px;"
         )
-        self._ocr_grid = QVBoxLayout(ocr_box)
-        self._ocr_grid.setContentsMargins(6, 4, 6, 4)
-        self._ocr_grid.setSpacing(1)
+        ocr_grid = QVBoxLayout(ocr_box)
+        ocr_grid.setContentsMargins(8, 6, 8, 6)
+        ocr_grid.setSpacing(2)
 
-        ocr_row_style = f"color: #E5E0D8; font-family: {FONT_MONO}; font-size: 8px;"
-        ocr_key_style = f"color: {CLR_DIM}; font-family: {FONT_MONO}; font-size: 8px;"
+        ocr_row_style = f"color: {CLR_TEXT}; font-family: {FONT_MONO}; font-size: 11px;"
+        ocr_key_style = f"color: {CLR_DIM}; font-family: {FONT_MONO}; font-size: 11px;"
 
         self._dbg_ocr_rows: dict[str, QLabel] = {}
         region_names = [
@@ -434,27 +809,27 @@ class MewgentOverlay(QMainWindow):
             row.setSpacing(4)
             key = QLabel(f"{name}:")
             key.setStyleSheet(ocr_key_style)
-            key.setFixedWidth(70)
+            key.setFixedWidth(85)
             row.addWidget(key)
             val = QLabel("--")
             val.setStyleSheet(ocr_row_style)
             row.addWidget(val)
             row.addStretch()
             self._dbg_ocr_rows[name] = val
-            self._ocr_grid.addLayout(row)
+            ocr_grid.addLayout(row)
 
-        parent_layout.addWidget(ocr_box)
+        dbg_layout.addWidget(ocr_box)
+        layout.addWidget(self._debug_content)
 
-    @staticmethod
-    def _make_stat_label(name: str, value: str, color: str = "#E5E0D8") -> QLabel:
-        lbl = QLabel(f"{name}  {value}")
-        lbl.setFont(QFont(FONT_MONO, 11))
-        lbl.setStyleSheet(
-            f"color: {color}; background: {CLR_BG_DIM}; "
-            f"border-radius: 4px; padding: 2px 6px;"
-        )
-        lbl.setObjectName(f"stat_{name}")
-        return lbl
+        expanded = QSettings("Mewgent", "Overlay").value("debug_expanded", False, type=bool)
+        self._debug_content.setVisible(expanded)
+        self._debug_chevron.setText("\u25BC" if expanded else "\u25B6")
+
+    def _toggle_debug(self) -> None:
+        visible = not self._debug_content.isVisible()
+        self._debug_content.setVisible(visible)
+        self._debug_chevron.setText("\u25BC" if visible else "\u25B6")
+        QSettings("Mewgent", "Overlay").setValue("debug_expanded", visible)
 
     # ── System tray ──────────────────────────────────────────────────
 
@@ -479,11 +854,11 @@ class MewgentOverlay(QMainWindow):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.setVisible(not self.isVisible())
 
-    # ── Force topmost (Win32 API) ──────────────────────────────────
+    # ── Force topmost ────────────────────────────────────────────────
 
     def _force_topmost(self) -> None:
-        """Use Win32 SetWindowPos to keep overlay above fullscreen games."""
-        if not self.isVisible():
+        """Use Win32 SetWindowPos on Windows; Qt flags suffice elsewhere."""
+        if not self.isVisible() or not _IS_WIN:
             return
         try:
             hwnd = int(self.winId())
@@ -501,7 +876,6 @@ class MewgentOverlay(QMainWindow):
     # ── Global hotkey toggle ────────────────────────────────────────
 
     def _toggle_overlay(self) -> None:
-        """Toggle overlay visibility (called from Alt+M hotkey)."""
         if self.isVisible():
             self.hide()
         else:
@@ -511,16 +885,16 @@ class MewgentOverlay(QMainWindow):
     # ── Slots ────────────────────────────────────────────────────────
 
     def _on_stats(self, stats: CatStats) -> None:
-        self._name_label.setText(stats.cat_name or "—")
-        mapping = {
-            "STR": stats.stat_str, "DEX": stats.stat_dex, "CON": stats.stat_con,
-            "INT": stats.stat_int, "SPD": stats.stat_spd, "CHA": stats.stat_cha,
-            "LCK": stats.stat_lck,
-        }
-        for key, val in mapping.items():
-            self._stat_labels[key].setText(f"{key}  {val}")
+        self._name_label.setText(stats.cat_name or "\u2014")
 
-        self._count_label.setText(f"Cats saved: {self._db.count_cats()}")
+        self._radar.update_stats(stats)
+        self._update_collar_scores(stats)
+
+        if self._db is not None:
+            count = self._db.count_cats()
+        else:
+            count = self._worker._index if hasattr(self._worker, "_index") else "?"
+        self._status_label.setText(f"Saved: {stats.cat_name}  \u2502  Cats: {count}")
 
     def _on_status(self, text: str) -> None:
         self._status_label.setText(text)
@@ -534,8 +908,10 @@ class MewgentOverlay(QMainWindow):
             "waiting_for_game": "#C24D4D",
             "empty_name": "#C24D4D",
         }
-        state_clr = STATE_COLORS.get(info.pipeline_state, "#B8A99A")
-        self._dbg_state_label.setText(f"State: <span style='color:{state_clr}'>{info.pipeline_state}</span>")
+        state_clr = STATE_COLORS.get(info.pipeline_state, CLR_ACCENT)
+        self._dbg_state_label.setText(
+            f"State: <span style='color:{state_clr}'>{info.pipeline_state}</span>"
+        )
         self._dbg_state_label.setTextFormat(Qt.TextFormat.RichText)
         self._dbg_scan_label.setText(f"Scan: {info.scan_number}")
 
@@ -574,7 +950,7 @@ class MewgentOverlay(QMainWindow):
         if geo:
             self.restoreGeometry(geo)
         else:
-            self.resize(400, 480)
+            self.resize(360, 780)
             self.move(100, 100)
 
     def closeEvent(self, event) -> None:
@@ -582,15 +958,17 @@ class MewgentOverlay(QMainWindow):
         settings.setValue("geometry", self.saveGeometry())
         self._worker.stop()
         self._worker.wait(3000)
-        self._hotkey_thread.stop()
-        self._hotkey_thread.wait(2000)
+        if self._hotkey_thread is not None:
+            self._hotkey_thread.stop()
+            self._hotkey_thread.wait(2000)
         self._topmost_timer.stop()
         event.accept()
 
     def _quit(self) -> None:
         self._worker.stop()
         self._worker.wait(3000)
-        self._hotkey_thread.stop()
-        self._hotkey_thread.wait(2000)
+        if self._hotkey_thread is not None:
+            self._hotkey_thread.stop()
+            self._hotkey_thread.wait(2000)
         self._topmost_timer.stop()
         QApplication.quit()

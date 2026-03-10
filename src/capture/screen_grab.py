@@ -1,16 +1,22 @@
 from __future__ import annotations
 
-import ctypes
 import logging
-from ctypes import wintypes
+import sys
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import win32gui
-import win32ui
 
 log = logging.getLogger("mewgent.capture.screen_grab")
+
+_IS_WIN = sys.platform == "win32"
+
+if _IS_WIN:
+    import ctypes
+    from ctypes import wintypes  # noqa: F401
+
+    import win32gui
+    import win32ui
 
 PW_CLIENTONLY = 1
 
@@ -28,6 +34,8 @@ class ScreenGrabber:
 
     def capture(self, hwnd: int) -> np.ndarray | None:
         """Return a BGR numpy array of the window's client area, or None on failure."""
+        if not _IS_WIN:
+            return None
         try:
             left, top, right, bottom = win32gui.GetClientRect(hwnd)
             w = right - left
