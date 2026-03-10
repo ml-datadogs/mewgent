@@ -54,29 +54,29 @@ LOGO_PATH = str(PROJECT_ROOT / "images" / "mewgent-logo.jpg")
 
 if _IS_WIN:
     FONT_MONO = "Consolas"
-    FONT_UI = "Segoe UI"
+    FONT_UI = "Georgia"
 else:
     FONT_MONO = "Menlo"
-    FONT_UI = "Helvetica Neue"
+    FONT_UI = "Georgia"
 
-CLR_BG = "rgba(26, 26, 26, 235)"
-CLR_BORDER = "#5A534D"
-CLR_DIM = "#8C847C"
-CLR_TEXT = "#E5E0D8"
-CLR_ACCENT = "#B8A99A"
-CLR_BG_DIM = "rgba(140,132,124,30)"
-CLR_BG_CARD = "rgba(255,255,255,8)"
+CLR_BG = "rgba(232, 223, 209, 245)"
+CLR_BORDER = "#A89880"
+CLR_DIM = "#9C8E7E"
+CLR_TEXT = "#3B342D"
+CLR_ACCENT = "#6B5D4F"
+CLR_BG_DIM = "rgba(107, 93, 79, 25)"
+CLR_BG_CARD = "rgba(255, 252, 245, 120)"
 
 STAT_KEYS = ["STR", "DEX", "CON", "INT", "SPD", "CHA", "LCK"]
 STAT_ATTRS = ["stat_str", "stat_dex", "stat_con", "stat_int", "stat_spd", "stat_cha", "stat_lck"]
 STAT_COLORS = {
-    "STR": "#C24D4D",
-    "DEX": "#D4AF37",
-    "CON": "#C24D4D",
-    "INT": "#5B7B8E",
-    "SPD": "#D4AF37",
-    "CHA": "#7A8B6C",
-    "LCK": "#D4AF37",
+    "STR": "#A0523D",
+    "DEX": "#B09840",
+    "CON": "#A0523D",
+    "INT": "#5A7A7D",
+    "SPD": "#B09840",
+    "CHA": "#6E8056",
+    "LCK": "#B09840",
 }
 
 MAX_BAR_W = 140
@@ -125,7 +125,7 @@ class RadarChartWidget(QWidget):
             a = start_angle + i * angle_step
             return QPointF(cx + r * math.cos(a), cy + r * math.sin(a))
 
-        grid_pen = QPen(QColor(140, 132, 124, 40), 1)
+        grid_pen = QPen(QColor(107, 93, 79, 50), 1)
         painter.setPen(grid_pen)
 
         for frac in (0.25, 0.5, 0.75, 1.0):
@@ -166,8 +166,8 @@ class RadarChartWidget(QWidget):
                 points.append(vertex(i, radius * frac))
             points.append(points[0])
 
-            fill_color = QColor(184, 169, 154, 50)
-            stroke_color = QColor(184, 169, 154, 180)
+            fill_color = QColor(139, 115, 85, 70)
+            stroke_color = QColor(107, 93, 79, 200)
 
             path = QPainterPath()
             path.addPolygon(points)
@@ -562,7 +562,7 @@ class MewgentOverlay(QMainWindow):
                 border-radius: 10px;
             }}
             QPushButton:hover {{
-                color: {CLR_TEXT}; background: rgba(255,255,255,20);
+                color: {CLR_TEXT}; background: rgba(0,0,0,15);
             }}
         """)
         close_btn.clicked.connect(self._quit)
@@ -587,7 +587,7 @@ class MewgentOverlay(QMainWindow):
         card.setStyleSheet(f"""
             #radarCard {{
                 background: {CLR_BG_CARD};
-                border: 1px solid rgba(255,255,255,6);
+                border: 1px solid {CLR_BORDER};
                 border-radius: 8px;
             }}
         """)
@@ -612,7 +612,7 @@ class MewgentOverlay(QMainWindow):
         card.setStyleSheet(f"""
             #collarCard {{
                 background: {CLR_BG_CARD};
-                border: 1px solid rgba(255,255,255,6);
+                border: 1px solid {CLR_BORDER};
                 border-radius: 8px;
             }}
         """)
@@ -705,7 +705,7 @@ class MewgentOverlay(QMainWindow):
                 row["name"].setStyleSheet(f"color: {CLR_TEXT}; font-weight: bold;")
                 row["score"].setStyleSheet(f"color: {CLR_TEXT}; font-weight: bold;")
                 row["widget"].setStyleSheet(
-                    f"background: {CLR_BG_CARD}; border-radius: 4px;"
+                    f"background: rgba(107, 93, 79, 20); border-radius: 4px;"
                 )
             else:
                 row["name"].setStyleSheet(f"color: {CLR_TEXT};")
@@ -735,7 +735,7 @@ class MewgentOverlay(QMainWindow):
 
         debug_title = QLabel("DEBUG")
         debug_title.setFont(QFont(FONT_MONO, 9, QFont.Weight.Bold))
-        debug_title.setStyleSheet("color: #5B7B8E;")
+        debug_title.setStyleSheet(f"color: {CLR_ACCENT};")
         header_row.addWidget(debug_title)
         header_row.addStretch()
 
@@ -744,7 +744,7 @@ class MewgentOverlay(QMainWindow):
         header_widget.setCursor(Qt.CursorShape.PointingHandCursor)
         header_widget.setStyleSheet("""
             QWidget { padding: 2px 0; }
-            QWidget:hover { background: rgba(255,255,255,8); border-radius: 4px; }
+            QWidget:hover { background: rgba(0,0,0,10); border-radius: 4px; }
         """)
         header_widget.mousePressEvent = lambda _e: self._toggle_debug()
         layout.addWidget(header_widget)
@@ -784,7 +784,7 @@ class MewgentOverlay(QMainWindow):
 
         ocr_title = QLabel("Raw OCR:")
         ocr_title.setFont(QFont(FONT_MONO, 10, QFont.Weight.Bold))
-        ocr_title.setStyleSheet("color: #5B7B8E; margin-top: 4px;")
+        ocr_title.setStyleSheet(f"color: {CLR_ACCENT}; margin-top: 4px;")
         dbg_layout.addWidget(ocr_title)
 
         ocr_box = QWidget()
@@ -901,12 +901,12 @@ class MewgentOverlay(QMainWindow):
 
     def _on_debug(self, info: DebugInfo) -> None:
         STATE_COLORS = {
-            "saved": "#7A8B6C",
-            "ocr_running": "#D4AF37",
+            "saved": "#6E8056",
+            "ocr_running": "#B09840",
             "frame_dedup": CLR_DIM,
-            "stat_dedup": "#C24D4D",
-            "waiting_for_game": "#C24D4D",
-            "empty_name": "#C24D4D",
+            "stat_dedup": "#A0523D",
+            "waiting_for_game": "#A0523D",
+            "empty_name": "#A0523D",
         }
         state_clr = STATE_COLORS.get(info.pipeline_state, CLR_ACCENT)
         self._dbg_state_label.setText(
