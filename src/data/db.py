@@ -5,21 +5,25 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from src.data.stat_parser import CatStats
+from src.data.stat_parser import STAT_NAMES, CatStats
 
 log = logging.getLogger("mewgent.data.db")
+
+_STAT_COLS = []
+for _sn in STAT_NAMES:
+    _STAT_COLS.extend([f"stat_{_sn}_total", f"stat_{_sn}_base", f"stat_{_sn}_bonus"])
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS cats (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     cat_name        TEXT NOT NULL,
-    stat_str        INTEGER,
-    stat_dex        INTEGER,
-    stat_con        INTEGER,
-    stat_int        INTEGER,
-    stat_spd        INTEGER,
-    stat_cha        INTEGER,
-    stat_lck        INTEGER,
+    stat_str_total  INTEGER, stat_str_base INTEGER, stat_str_bonus INTEGER,
+    stat_dex_total  INTEGER, stat_dex_base INTEGER, stat_dex_bonus INTEGER,
+    stat_con_total  INTEGER, stat_con_base INTEGER, stat_con_bonus INTEGER,
+    stat_int_total  INTEGER, stat_int_base INTEGER, stat_int_bonus INTEGER,
+    stat_spd_total  INTEGER, stat_spd_base INTEGER, stat_spd_bonus INTEGER,
+    stat_cha_total  INTEGER, stat_cha_base INTEGER, stat_cha_bonus INTEGER,
+    stat_lck_total  INTEGER, stat_lck_base INTEGER, stat_lck_bonus INTEGER,
     first_seen      TEXT NOT NULL,
     last_seen       TEXT NOT NULL,
     snapshot_hash   TEXT NOT NULL,
@@ -43,27 +47,23 @@ class SQLiteStore:
 
     def save_cat(self, stats: CatStats, snapshot_hash: str) -> bool:
         """Insert or update a cat snapshot. Returns True if a new row was inserted."""
+        col_names = ", ".join(_STAT_COLS)
+        placeholders = ", ".join(["?"] * (1 + len(_STAT_COLS) + 3))
+
+        values: list[Any] = [stats.cat_name]
+        for sn in STAT_NAMES:
+            sv = getattr(stats, f"stat_{sn}")
+            values.extend([sv.total, sv.base, sv.bonus])
+        values.extend([stats.captured_at, stats.captured_at, snapshot_hash])
+
         try:
             self._conn.execute(
-                """
-                INSERT INTO cats (cat_name, stat_str, stat_dex, stat_con, stat_int,
-                                  stat_spd, stat_cha, stat_lck, first_seen, last_seen, snapshot_hash)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                f"""
+                INSERT INTO cats (cat_name, {col_names}, first_seen, last_seen, snapshot_hash)
+                VALUES ({placeholders})
                 ON CONFLICT(cat_name, snapshot_hash) DO UPDATE SET last_seen = excluded.last_seen
                 """,
-                (
-                    stats.cat_name,
-                    stats.stat_str,
-                    stats.stat_dex,
-                    stats.stat_con,
-                    stats.stat_int,
-                    stats.stat_spd,
-                    stats.stat_cha,
-                    stats.stat_lck,
-                    stats.captured_at,
-                    stats.captured_at,
-                    snapshot_hash,
-                ),
+                values,
             )
             self._conn.commit()
             inserted = self._conn.execute("SELECT changes()").fetchone()[0] > 0

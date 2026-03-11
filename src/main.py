@@ -89,7 +89,13 @@ def run_headless(cfg: AppConfig) -> None:
 
     binder, grabber, detector, cropper, ocr, db, dedup = _build_pipeline(cfg)
 
-    allowlists = {name: rdef.allowlist for name, rdef in cfg.regions.regions.items()}
+    allowlists: dict[str, str] = {}
+    for name, rdef in cfg.regions.regions.items():
+        if rdef.is_stat_triple:
+            for suffix in ("total", "base", "bonus"):
+                allowlists[f"{name}_{suffix}"] = rdef.allowlist
+        else:
+            allowlists[name] = rdef.allowlist
 
     log.info("Starting headless capture loop  (interval=%dms)", cfg.capture.interval_ms)
     log.info("Waiting for game window '%s'…", cfg.capture.window_title)

@@ -45,9 +45,22 @@ class DebugConfig:
 
 @dataclass
 class RegionDef:
-    rect: list[int]
+    """Definition for a single OCR region.
+
+    Simple regions (cat_name, cat_age, etc.) use ``rect``.
+    Stat regions use ``rect_total``, ``rect_base``, ``rect_bonus`` instead.
+    """
+    rect: list[int] = field(default_factory=list)
     allowlist: str = ""
     preprocess: list[str] = field(default_factory=lambda: ["grayscale", "threshold"])
+    icon_file: str = ""
+    rect_total: list[int] = field(default_factory=list)
+    rect_base: list[int] = field(default_factory=list)
+    rect_bonus: list[int] = field(default_factory=list)
+
+    @property
+    def is_stat_triple(self) -> bool:
+        return bool(self.rect_total)
 
 
 @dataclass

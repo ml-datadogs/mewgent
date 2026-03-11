@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.data.collars import COLLARS, compute_collar_scores
-from src.data.stat_parser import CatStats
+from src.data.stat_parser import CatStats, StatValue, STAT_NAMES
 from src.utils.config_loader import PROJECT_ROOT, AppConfig
 
 log = logging.getLogger("mewgent.ui.overlay")
@@ -105,7 +105,7 @@ class RadarChartWidget(QWidget):
         self._max_val: int = 20
 
     def update_stats(self, stats: CatStats) -> None:
-        self._values = [getattr(stats, a) for a in STAT_ATTRS]
+        self._values = [getattr(stats, a).total for a in STAT_ATTRS]
         self._max_val = max(max(self._values), 1)
         self.update()
 
@@ -261,9 +261,13 @@ class CaptureWorker(QThread):
             self._dedup,
         ) = pipeline
         self._running = True
-        self._allowlists = {
-            name: rdef.allowlist for name, rdef in cfg.regions.regions.items()
-        }
+        self._allowlists: dict[str, str] = {}
+        for name, rdef in cfg.regions.regions.items():
+            if rdef.is_stat_triple:
+                for suffix in ("total", "base", "bonus"):
+                    self._allowlists[f"{name}_{suffix}"] = rdef.allowlist
+            else:
+                self._allowlists[name] = rdef.allowlist
         self._dbg = DebugInfo()
 
     def stop(self) -> None:
@@ -361,17 +365,21 @@ class CaptureWorker(QThread):
 
 # ── Mock capture worker (dev-ui mode) ────────────────────────────────
 
+def _sv(total: int) -> StatValue:
+    return StatValue(total=total, base=total, bonus=0)
+
+
 _SAMPLE_CATS = [
-    CatStats(cat_name="Whiskers", stat_str=12, stat_dex=8, stat_con=15,
-             stat_int=6, stat_spd=10, stat_cha=14, stat_lck=3),
-    CatStats(cat_name="Mittens", stat_str=6, stat_dex=18, stat_con=9,
-             stat_int=14, stat_spd=16, stat_cha=5, stat_lck=11),
-    CatStats(cat_name="Chairman Meow", stat_str=20, stat_dex=4, stat_con=18,
-             stat_int=20, stat_spd=2, stat_cha=20, stat_lck=7),
-    CatStats(cat_name="Purrlock Holmes", stat_str=8, stat_dex=12, stat_con=10,
-             stat_int=19, stat_spd=11, stat_cha=9, stat_lck=15),
-    CatStats(cat_name="Catrick Swayze", stat_str=14, stat_dex=15, stat_con=12,
-             stat_int=7, stat_spd=17, stat_cha=16, stat_lck=5),
+    CatStats(cat_name="Whiskers", stat_str=_sv(12), stat_dex=_sv(8), stat_con=_sv(15),
+             stat_int=_sv(6), stat_spd=_sv(10), stat_cha=_sv(14), stat_lck=_sv(3)),
+    CatStats(cat_name="Mittens", stat_str=_sv(6), stat_dex=_sv(18), stat_con=_sv(9),
+             stat_int=_sv(14), stat_spd=_sv(16), stat_cha=_sv(5), stat_lck=_sv(11)),
+    CatStats(cat_name="Chairman Meow", stat_str=_sv(20), stat_dex=_sv(4), stat_con=_sv(18),
+             stat_int=_sv(20), stat_spd=_sv(2), stat_cha=_sv(20), stat_lck=_sv(7)),
+    CatStats(cat_name="Purrlock Holmes", stat_str=_sv(8), stat_dex=_sv(12), stat_con=_sv(10),
+             stat_int=_sv(19), stat_spd=_sv(11), stat_cha=_sv(9), stat_lck=_sv(15)),
+    CatStats(cat_name="Catrick Swayze", stat_str=_sv(14), stat_dex=_sv(15), stat_con=_sv(12),
+             stat_int=_sv(7), stat_spd=_sv(17), stat_cha=_sv(16), stat_lck=_sv(5)),
 ]
 
 
@@ -408,18 +416,16 @@ class MockCaptureWorker(QObject):
         self.stats_ready.emit(cat)
         self.status_changed.emit(f"[mock] Saved: {cat.cat_name}")
 
-        raw_ocr = {
+        raw_ocr: dict[str, str] = {
             "cat_name": cat.cat_name,
             "cat_age": str(random.randint(1, 9)),
             "cat_level": str(random.randint(1, 50)),
-            "stat_str": str(cat.stat_str),
-            "stat_dex": str(cat.stat_dex),
-            "stat_con": str(cat.stat_con),
-            "stat_int": str(cat.stat_int),
-            "stat_spd": str(cat.stat_spd),
-            "stat_cha": str(cat.stat_cha),
-            "stat_lck": str(cat.stat_lck),
         }
+        for sn in STAT_NAMES:
+            sv: StatValue = getattr(cat, f"stat_{sn}")
+            raw_ocr[f"stat_{sn}_total"] = str(sv.total)
+            raw_ocr[f"stat_{sn}_base"] = str(sv.base)
+            raw_ocr[f"stat_{sn}_bonus"] = str(sv.bonus)
 
         self.debug_updated.emit(DebugInfo(
             scan_number=self._scan,
@@ -799,11 +805,10 @@ class MewgentOverlay(QMainWindow):
         ocr_key_style = f"color: {CLR_DIM}; font-family: {FONT_MONO}; font-size: 11px;"
 
         self._dbg_ocr_rows: dict[str, QLabel] = {}
-        region_names = [
-            "cat_name", "cat_age", "cat_level",
-            "stat_str", "stat_dex", "stat_con",
-            "stat_int", "stat_spd", "stat_cha", "stat_lck",
-        ]
+        region_names = ["cat_name", "cat_age", "cat_level"]
+        for sn in STAT_NAMES:
+            for suffix in ("total", "base", "bonus"):
+                region_names.append(f"stat_{sn}_{suffix}")
         for name in region_names:
             row = QHBoxLayout()
             row.setSpacing(4)

@@ -79,7 +79,7 @@ def collar_score(collar: CollarDef, stats: CatStats) -> float:
     total = 0.0
     for stat_key, weight in collar.score_weights:
         attr = _STAT_ATTR[stat_key]
-        total += getattr(stats, attr) * weight
+        total += getattr(stats, attr).total * weight
     return round(total / 3, 2)
 
 

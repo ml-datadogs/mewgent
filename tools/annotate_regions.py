@@ -1,7 +1,7 @@
 """Interactive region annotator for Mewgent.
 
 Usage:
-    python -m uv run python tools/annotate_regions.py <screenshot_path>
+    uv run python -m tools.annotate_regions <screenshot_path>
 
 Controls:
     Left-click       Place corner point (2 clicks = one rectangle)
@@ -35,18 +35,50 @@ COLORS = [
     (128, 128, 255),
 ]
 
-STAT_PRESETS = [
-    ("cat_name",  "Select the CAT NAME text (e.g. 'William')"),
-    ("cat_age",   "Select the AGE number (e.g. 'Age 10')"),
-    ("cat_level", "Select the LEVEL text (e.g. 'Lv. 0')"),
-    ("stat_str",  "Select the STRENGTH number (sword icon row)"),
-    ("stat_dex",  "Select the DEXTERITY number (boot icon row)"),
-    ("stat_con",  "Select the CONSTITUTION number (heart icon row)"),
-    ("stat_int",  "Select the INTELLIGENCE number (brain icon row)"),
-    ("stat_spd",  "Select the SPEED number (wing/boot icon row)"),
-    ("stat_cha",  "Select the CHARISMA number (cat face icon row)"),
-    ("stat_lck",  "Select the LUCK number (star icon row)"),
+SUB_COLORS = {
+    "total": (0, 200, 255),
+    "base": (0, 255, 100),
+    "bonus": (255, 100, 200),
+}
+
+STAT_NAMES = ["str", "dex", "con", "int", "spd", "cha", "lck"]
+STAT_LABELS = {
+    "str": "STRENGTH",
+    "dex": "DEXTERITY",
+    "con": "CONSTITUTION",
+    "int": "INTELLIGENCE",
+    "spd": "SPEED",
+    "cha": "CHARISMA",
+    "lck": "LUCK",
+}
+STAT_ICON_FILES = {
+    "str": "images/characteristics/Stat_Strength.png",
+    "dex": "images/characteristics/Stat_Dexterity.png",
+    "con": "images/characteristics/Stat_Constitution.png",
+    "int": "images/characteristics/Stat_Intelligence.png",
+    "spd": "images/characteristics/Stat_Speed.png",
+    "cha": "images/characteristics/Stat_Charisma.png",
+    "lck": "images/characteristics/Stat_Luck.png",
+}
+
+PRESETS: list[tuple[str, str]] = [
+    ("cat_name",  "Select the CAT NAME text (e.g. 'Dingle')"),
+    ("cat_age",   "Select the AGE number (e.g. 'Age 2')"),
+    ("cat_level", "Select the LEVEL text (e.g. 'Lv. 7')"),
 ]
+
+for sn in STAT_NAMES:
+    label = STAT_LABELS[sn]
+    PRESETS.append((f"stat_{sn}_total", f"{label} — select the TOTAL number (1st column)"))
+    PRESETS.append((f"stat_{sn}_base",  f"{label} — select the BASE number (2nd column)"))
+    PRESETS.append((f"stat_{sn}_bonus", f"{label} — select the BONUS number (3rd column, e.g. +5)"))
+
+
+def _region_color(name: str, index: int) -> tuple[int, int, int]:
+    for suffix, clr in SUB_COLORS.items():
+        if name.endswith(f"_{suffix}"):
+            return clr
+    return COLORS[index % len(COLORS)]
 
 
 class RegionAnnotator:
@@ -65,48 +97,43 @@ class RegionAnnotator:
 
     @property
     def _current_preset(self) -> str:
-        if self.preset_idx < len(STAT_PRESETS):
-            return STAT_PRESETS[self.preset_idx][0]
+        if self.preset_idx < len(PRESETS):
+            return PRESETS[self.preset_idx][0]
         return f"region_{len(self.regions)}"
 
     @property
     def _current_hint(self) -> str:
-        if self.preset_idx < len(STAT_PRESETS):
-            return STAT_PRESETS[self.preset_idx][1]
+        if self.preset_idx < len(PRESETS):
+            return PRESETS[self.preset_idx][1]
         return "Click two corners to define a custom region"
 
     def _draw(self) -> np.ndarray:
         canvas = self.original.copy()
 
-        # Draw saved regions
         for i, reg in enumerate(self.regions):
-            color = COLORS[i % len(COLORS)]
+            color = _region_color(reg["name"], i)
             x, y, rw, rh = reg["rect"]
             cv2.rectangle(canvas, (x, y), (x + rw, y + rh), color, 2)
             label = reg["name"]
-            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
             cv2.rectangle(canvas, (x, y - th - 6), (x + tw + 4, y), color, -1)
             cv2.putText(canvas, label, (x + 2, y - 4),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
 
-        # Draw in-progress rectangle
         if self.first_point is not None:
             p = self.first_point
             cv2.circle(canvas, p, 4, (0, 0, 255), -1)
             cv2.rectangle(canvas, p, (self.mx, self.my), (0, 0, 255), 1)
 
-        # Crosshair
         cv2.line(canvas, (self.mx, 0), (self.mx, self.h), (80, 80, 80), 1)
         cv2.line(canvas, (0, self.my), (self.w, self.my), (80, 80, 80), 1)
 
-        # Coordinate display
         coord = f"({self.mx}, {self.my})"
         cv2.putText(canvas, coord, (self.mx + 10, self.my - 10),
                     cv2.FONT_HERSHEY_PLAIN, 1.0, (255, 255, 255), 2)
         cv2.putText(canvas, coord, (self.mx + 10, self.my - 10),
                     cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 0), 1)
 
-        # ── Top instruction banner ─────────────────────────────────
         banner_h = 52
         overlay = canvas[0:banner_h, :].copy()
         dark = np.zeros_like(overlay)
@@ -116,12 +143,12 @@ class RegionAnnotator:
         step_num = len(self.regions) + 1
         next_name = self._current_preset
         hint = self._current_hint
-        color_next = COLORS[len(self.regions) % len(COLORS)]
+        color_next = _region_color(next_name, len(self.regions))
 
-        cv2.putText(canvas, f"Step {step_num}: [{next_name}]", (10, 20),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, color_next, 2)
+        cv2.putText(canvas, f"Step {step_num}/{len(PRESETS)}: [{next_name}]", (10, 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, color_next, 2)
         cv2.putText(canvas, hint, (10, 42),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1)
 
         if self.first_point is None:
             cv2.putText(canvas, ">> Click TOP-LEFT corner", (self.w - 280, 20),
@@ -130,22 +157,21 @@ class RegionAnnotator:
             cv2.putText(canvas, ">> Click BOTTOM-RIGHT corner", (self.w - 310, 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-        # ── Bottom status bar ─────────────────────────────────────
         bar_h = 30
         cv2.rectangle(canvas, (0, self.h - bar_h), (self.w, self.h), (40, 40, 40), -1)
 
-        status = f"Saved: {len(self.regions)}/{len(STAT_PRESETS)}  |  N/P: cycle name  |  Z: zoom  |  U: undo  |  S: save  |  Q: quit"
+        total_presets = len(PRESETS)
+        status = (f"Saved: {len(self.regions)}/{total_presets}  |  "
+                  f"N/P: cycle  |  Z: zoom  |  U: undo  |  S: save  |  Q: quit")
         cv2.putText(canvas, status, (8, self.h - 9),
                     cv2.FONT_HERSHEY_PLAIN, 1.0, (180, 180, 180), 1)
 
-        # Zoom lens
         if self.zoom:
             radius = 80
             zx = max(radius, min(self.mx, self.w - radius))
             zy = max(radius, min(self.my, self.h - radius))
             crop = self.original[zy - radius:zy + radius, zx - radius:zx + radius].copy()
 
-            # Draw crosshair on zoom crop
             ch, cw = crop.shape[:2]
             cv2.line(crop, (cw // 2, 0), (cw // 2, ch), (0, 0, 255), 1)
             cv2.line(crop, (0, ch // 2), (cw, ch // 2), (0, 0, 255), 1)
@@ -179,13 +205,13 @@ class RegionAnnotator:
                     return
 
                 name = self._current_preset
-                allowlist = "0123456789" if name.startswith("stat_") else ""
+                allowlist = "0123456789-+" if name.startswith("stat_") else ""
 
                 self.regions.append({
                     "name": name,
                     "rect": [rx, ry, rw, rh],
                     "allowlist": allowlist,
-                    "preprocess": ["grayscale", "threshold"],
+                    "preprocess": ["grayscale", "threshold", "resize2x"] if name.startswith("stat_") else ["grayscale", "threshold"],
                 })
                 self.preset_idx += 1
                 self.first_point = None
@@ -213,35 +239,69 @@ class RegionAnnotator:
                 if self.first_point is not None:
                     self.first_point = None
                 elif self.regions:
-                    removed = self.regions.pop()
+                    self.regions.pop()
                     self.preset_idx = max(0, self.preset_idx - 1)
             elif key == ord("z"):
                 self.zoom = not self.zoom
-            elif key == ord("n") or key == 82:  # N or arrow-up
-                self.preset_idx = (self.preset_idx + 1) % len(STAT_PRESETS)
-            elif key == ord("p") or key == 84:  # P or arrow-down
+            elif key == ord("n") or key == 82:
+                self.preset_idx = (self.preset_idx + 1) % len(PRESETS)
+            elif key == ord("p") or key == 84:
                 self.preset_idx = max(0, self.preset_idx - 1)
 
         cv2.destroyAllWindows()
 
     def _save(self) -> None:
         if not self.regions:
-            print("No regions defined — nothing to save.")
+            print("No regions defined -- nothing to save.")
             return
 
-        # Save annotated image
         canvas = self.original.copy()
         for i, reg in enumerate(self.regions):
-            color = COLORS[i % len(COLORS)]
+            color = _region_color(reg["name"], i)
             x, y, rw, rh = reg["rect"]
             cv2.rectangle(canvas, (x, y), (x + rw, y + rh), color, 2)
             label = f"{reg['name']} [{x},{y},{rw},{rh}]"
-            cv2.putText(canvas, label, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+            cv2.putText(canvas, label, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
         out_img = Path("debug_screenshots/annotated_regions.png")
+        out_img.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(out_img), canvas)
         print(f"Annotated image -> {out_img}")
 
-        # Build and write YAML
+        regions_by_name: dict[str, dict] = {}
+        for reg in self.regions:
+            regions_by_name[reg["name"]] = reg
+
+        yaml_regions: dict = {}
+
+        for name in ["cat_name", "cat_age", "cat_level"]:
+            if name in regions_by_name:
+                reg = regions_by_name[name]
+                yaml_regions[name] = {
+                    "rect": reg["rect"],
+                    "allowlist": reg["allowlist"],
+                    "preprocess": reg["preprocess"],
+                }
+
+        for sn in STAT_NAMES:
+            total_key = f"stat_{sn}_total"
+            base_key = f"stat_{sn}_base"
+            bonus_key = f"stat_{sn}_bonus"
+
+            entry: dict = {
+                "allowlist": "0123456789-+",
+                "preprocess": ["grayscale", "threshold", "resize2x"],
+                "icon_file": STAT_ICON_FILES[sn],
+            }
+
+            if total_key in regions_by_name:
+                entry["rect_total"] = regions_by_name[total_key]["rect"]
+            if base_key in regions_by_name:
+                entry["rect_base"] = regions_by_name[base_key]["rect"]
+            if bonus_key in regions_by_name:
+                entry["rect_bonus"] = regions_by_name[bonus_key]["rect"]
+
+            yaml_regions[f"stat_{sn}"] = entry
+
         yaml_data = {
             "game_resolution": [self.w, self.h],
             "scene_templates": {
@@ -251,14 +311,8 @@ class RegionAnnotator:
                     "match_region": [0, 0, 400, 100],
                 }
             },
-            "regions": {},
+            "regions": yaml_regions,
         }
-        for reg in self.regions:
-            yaml_data["regions"][reg["name"]] = {
-                "rect": reg["rect"],
-                "allowlist": reg["allowlist"],
-                "preprocess": reg["preprocess"],
-            }
 
         yaml_path = Path("config/regions.yaml")
         yaml_str = yaml.dump(yaml_data, default_flow_style=False, sort_keys=False)
@@ -269,10 +323,21 @@ class RegionAnnotator:
         for reg in self.regions:
             print(f"  {reg['name']}: {reg['rect']}")
 
+        print(f"\nStat regions (grouped):")
+        for sn in STAT_NAMES:
+            key = f"stat_{sn}"
+            if key in yaml_regions:
+                entry = yaml_regions[key]
+                parts = []
+                for sub in ["rect_total", "rect_base", "rect_bonus"]:
+                    if sub in entry:
+                        parts.append(f"{sub}={entry[sub]}")
+                print(f"  {key}: {', '.join(parts)}")
+
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: python tools/annotate_regions.py <screenshot.png>")
+        print("Usage: python -m tools.annotate_regions <screenshot.png>")
         sys.exit(1)
     RegionAnnotator(sys.argv[1]).run()
 
