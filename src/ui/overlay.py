@@ -1,23 +1,26 @@
 from __future__ import annotations
 
+import math
 import logging
 import sys
 from typing import Any
 
-from PySide6.QtCore import QSettings, QThread, QTimer, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSettings, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import (
     QAction,
+    QBrush,
     QColor,
     QFont,
+    QFontMetrics,
     QIcon,
     QPainter,
     QPen,
     QPixmap,
+    QPolygonF,
 )
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -53,6 +56,7 @@ MOD_ALT = 0x0001
 VK_M = 0x4D
 
 LOGO_PATH = str(PROJECT_ROOT / "images" / "mewgent-logo.jpg")
+CHAR_DIR = PROJECT_ROOT / "images" / "characteristics"
 
 if _IS_WIN:
     FONT_MONO = "Consolas"
@@ -61,16 +65,56 @@ else:
     FONT_MONO = "Menlo"
     FONT_UI = "Georgia"
 
-CLR_BG = "rgba(232, 223, 209, 245)"
-CLR_BORDER = "#A89880"
-CLR_DIM = "#9C8E7E"
-CLR_TEXT = "#3B342D"
-CLR_ACCENT = "#6B5D4F"
-CLR_BG_DIM = "rgba(107, 93, 79, 25)"
-CLR_BG_CARD = "rgba(255, 252, 245, 120)"
+# ── Warm paper palette (matches Mewgenics torn-paper UI) ─────────────
+CLR_BG = "#DDD4C4"
+CLR_BORDER = "#B8AD9C"
+CLR_DIM = "#8A7D6D"
+CLR_TEXT = "#2D2926"
+CLR_ACCENT = "#C17070"
+CLR_BG_DIM = "rgba(0, 0, 0, 12)"
+CLR_BG_CARD = "rgba(255, 252, 245, 200)"
 CLR_HIGHLIGHT = "rgba(110, 128, 86, 35)"
-CLR_SELECTED = "rgba(107, 93, 79, 40)"
-CLR_BEST = "#6E8056"
+CLR_SELECTED = "rgba(110, 128, 86, 20)"
+CLR_BEST = "#5E7A3A"
+
+STAT_COLORS: dict[str, str] = {
+    "str": "#C13128",
+    "dex": "#E8A524",
+    "con": "#3B7A57",
+    "int": "#4A90E2",
+    "spd": "#D4A017",
+    "cha": "#C17070",
+    "lck": "#5E7A3A",
+}
+
+STAT_ICON_FILES: dict[str, str] = {
+    "str": "Stat_Strength.png",
+    "dex": "Stat_Dexterity.png",
+    "con": "Stat_Constitution.png",
+    "int": "Stat_Intelligence.png",
+    "spd": "Stat_Speed.png",
+    "cha": "Stat_Charisma.png",
+    "lck": "Stat_Luck.png",
+}
+
+STAT_ORDER = ["str", "dex", "con", "int", "spd", "cha", "lck"]
+STAT_LABELS = ["STR", "DEX", "CON", "INT", "SPD", "CHA", "LCK"]
+
+
+def _load_stat_icons(size: int = 14) -> dict[str, QPixmap]:
+    """Load stat icons as black silhouettes (perfect on paper background)."""
+    icons: dict[str, QPixmap] = {}
+    for stat_key, filename in STAT_ICON_FILES.items():
+        path = CHAR_DIR / filename
+        pix = QPixmap(str(path))
+        if pix.isNull():
+            continue
+        icons[stat_key] = pix.scaled(
+            size, size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+    return icons
 
 
 # ── Win32-only hotkey thread ─────────────────────────────────────────
@@ -112,17 +156,316 @@ def _make_separator() -> QLabel:
     return sep
 
 
-def _score_cell(value: float, is_best: bool, collar_color: str) -> QLabel:
-    """Create a score label for the scoring table."""
-    lbl = QLabel(f"{value:.1f}")
-    lbl.setFont(QFont(FONT_MONO, 8))
-    lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    if is_best:
-        lbl.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
-        lbl.setStyleSheet(f"color: {collar_color}; font-weight: bold;")
-    else:
-        lbl.setStyleSheet(f"color: {CLR_DIM};")
-    return lbl
+def _detach(widget: QWidget | None) -> None:
+    """Immediately detach a widget from its parent/layout then schedule deletion."""
+    if widget is None:
+        return
+    widget.setParent(None)
+    widget.deleteLater()
+
+
+# ── Radar chart widget ───────────────────────────────────────────────
+
+class RadarChartWidget(QWidget):
+    """Heptagonal spider/radar chart for 7 stats.
+
+    Accepts either a SaveCat or raw stat values list.
+    Optionally draws a min/max range polygon behind the data.
+    """
+
+    def __init__(
+        self,
+        cat: SaveCat | None = None,
+        size: int = 140,
+        show_labels: bool = True,
+        values: list[float] | None = None,
+        range_min: list[float] | None = None,
+        range_max: list[float] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        if values is not None:
+            self._values = values
+        elif cat is not None:
+            self._values = [float(getattr(cat, f"base_{s}", 0)) for s in STAT_ORDER]
+        else:
+            self._values = [0.0] * 7
+        self._range_min = range_min
+        self._range_max = range_max
+        self._show_labels = show_labels
+        self.setFixedSize(size, size)
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+        cx, cy = w / 2, h / 2
+        margin = 22 if self._show_labels else 6
+        radius = min(w, h) / 2 - margin
+        n = 7
+        max_stat = 10.0
+
+        angle_offset = -math.pi / 2
+
+        def _point(idx: int, r: float) -> QPointF:
+            a = angle_offset + (2 * math.pi * idx / n)
+            return QPointF(cx + r * math.cos(a), cy + r * math.sin(a))
+
+        for frac in (0.25, 0.50, 0.75, 1.0):
+            ring = QPolygonF([_point(i, radius * frac) for i in range(n)])
+            ring.append(ring[0])
+            pen_color = QColor(CLR_BORDER)
+            pen_color.setAlpha(80 if frac < 1.0 else 140)
+            p.setPen(QPen(pen_color, 0.5 if frac < 1.0 else 1.0))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawPolygon(ring)
+
+        for i in range(n):
+            pt = _point(i, radius)
+            pen_color = QColor(CLR_BORDER)
+            pen_color.setAlpha(50)
+            p.setPen(QPen(pen_color, 0.5))
+            p.drawLine(QPointF(cx, cy), pt)
+
+        # Range polygon (min/max band)
+        if self._range_min and self._range_max:
+            range_poly = QPolygonF()
+            for i in range(n):
+                r = (min(self._range_max[i], max_stat) / max_stat) * radius
+                range_poly.append(_point(i, max(r, radius * 0.03)))
+            range_poly.append(range_poly[0])
+            fill = QColor("#B8AD9C")
+            fill.setAlpha(40)
+            p.setBrush(QBrush(fill))
+            p.setPen(QPen(QColor("#B8AD9C"), 0.5))
+            p.drawPolygon(range_poly)
+
+            min_poly = QPolygonF()
+            for i in range(n):
+                r = (min(self._range_min[i], max_stat) / max_stat) * radius
+                min_poly.append(_point(i, max(r, radius * 0.03)))
+            min_poly.append(min_poly[0])
+            erase = QColor(CLR_BG)
+            erase.setAlpha(180)
+            p.setBrush(QBrush(erase))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawPolygon(min_poly)
+
+        # Data polygon
+        data_pts = QPolygonF()
+        for i, val in enumerate(self._values):
+            r = (min(val, max_stat) / max_stat) * radius
+            data_pts.append(_point(i, max(r, radius * 0.03)))
+        data_pts.append(data_pts[0])
+
+        fill_color = QColor("#5E7A3A")
+        fill_color.setAlpha(50)
+        p.setBrush(QBrush(fill_color))
+        p.setPen(QPen(QColor("#5E7A3A"), 1.5))
+        p.drawPolygon(data_pts)
+
+        for i, val in enumerate(self._values):
+            r = (min(val, max_stat) / max_stat) * radius
+            pt = _point(i, max(r, radius * 0.03))
+            dot_color = QColor(STAT_COLORS[STAT_ORDER[i]])
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(dot_color)
+            p.drawEllipse(pt, 3, 3)
+
+        if self._show_labels:
+            font = QFont(FONT_MONO, 7, QFont.Weight.Bold)
+            p.setFont(font)
+            fm = QFontMetrics(font)
+            for i, val in enumerate(self._values):
+                lbl_pt = _point(i, radius + 12)
+                label = STAT_LABELS[i]
+                tw = fm.horizontalAdvance(label)
+                th = fm.height()
+                color = QColor(STAT_COLORS[STAT_ORDER[i]]) if val >= 7 else QColor(CLR_DIM)
+                p.setPen(color)
+                p.drawText(
+                    QRectF(lbl_pt.x() - tw / 2, lbl_pt.y() - th / 2, tw, th),
+                    Qt.AlignmentFlag.AlignCenter,
+                    label,
+                )
+
+        p.end()
+
+
+# ── Stat Distribution chart (page 1) ────────────────────────────────
+
+class StatDistributionWidget(QWidget):
+    """Horizontal stacked bars showing low/mid/high cat counts per stat."""
+
+    def __init__(
+        self,
+        cats: list[SaveCat],
+        icons: dict[str, QPixmap],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._cats = cats
+        self._icons = icons
+        self.setMinimumHeight(max(160, 24 * 7 + 20))
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        total_cats = len(self._cats)
+        if total_cats == 0:
+            p.setPen(QColor(CLR_DIM))
+            p.setFont(QFont(FONT_UI, 9))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No cats")
+            p.end()
+            return
+
+        bar_h = 16
+        gap = 6
+        label_w = 50
+        count_w = 60
+        bar_area = w - label_w - count_w - 10
+        y = 8
+
+        for idx, stat_key in enumerate(STAT_ORDER):
+            low = mid = high = 0
+            for cat in self._cats:
+                val = getattr(cat, f"base_{stat_key}", 0)
+                if val <= 3:
+                    low += 1
+                elif val <= 6:
+                    mid += 1
+                else:
+                    high += 1
+
+            base_color = QColor(STAT_COLORS[stat_key])
+
+            # Icon + label
+            icon_x = 4
+            icon = self._icons.get(stat_key)
+            if icon:
+                p.drawPixmap(icon_x, int(y + (bar_h - 14) / 2), icon)
+                icon_x += 18
+
+            p.setPen(QColor(CLR_TEXT))
+            p.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
+            p.drawText(
+                QRectF(icon_x, y, label_w - icon_x, bar_h),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                stat_key.upper(),
+            )
+
+            # Stacked bar
+            bx = label_w
+            for count, alpha in [(low, 60), (mid, 120), (high, 220)]:
+                if count == 0:
+                    continue
+                seg_w = max(1, int((count / total_cats) * bar_area))
+                c = QColor(base_color)
+                c.setAlpha(alpha)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(c)
+                p.drawRoundedRect(QRectF(bx, y + 1, seg_w, bar_h - 2), 3, 3)
+                bx += seg_w
+
+            # Counts text
+            p.setPen(QColor(CLR_DIM))
+            p.setFont(QFont(FONT_MONO, 7))
+            p.drawText(
+                QRectF(w - count_w - 4, y, count_w, bar_h),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                f"{low}L  {mid}M  {high}H",
+            )
+
+            y += bar_h + gap
+
+        p.end()
+
+
+# ── Class Fit chart (page 2) ────────────────────────────────────────
+
+class ClassFitWidget(QWidget):
+    """Horizontal stacked bars showing good/ok/poor cat counts per class."""
+
+    def __init__(
+        self,
+        cats: list[SaveCat],
+        collars: list[CollarDef],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._cats = cats
+        self._collars = collars
+        self.setMinimumHeight(max(120, 24 * len(collars) + 20))
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        total_cats = len(self._cats)
+        if total_cats == 0:
+            p.setPen(QColor(CLR_DIM))
+            p.setFont(QFont(FONT_UI, 9))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No cats")
+            p.end()
+            return
+
+        bar_h = 16
+        gap = 6
+        label_w = 60
+        count_w = 60
+        bar_area = w - label_w - count_w - 10
+        y = 8
+
+        for collar in self._collars:
+            good = ok = poor = 0
+            for cat in self._cats:
+                cs = save_cat_to_stats(cat)
+                sc = collar_score(collar, cs)
+                if sc >= 7.0:
+                    good += 1
+                elif sc >= 5.0:
+                    ok += 1
+                else:
+                    poor += 1
+
+            base_color = QColor(collar.color)
+
+            p.setPen(base_color)
+            p.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
+            p.drawText(
+                QRectF(4, y, label_w - 4, bar_h),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                collar.name[:6],
+            )
+
+            bx = label_w
+            for count, alpha in [(poor, 50), (ok, 120), (good, 220)]:
+                if count == 0:
+                    continue
+                seg_w = max(1, int((count / total_cats) * bar_area))
+                c = QColor(base_color)
+                c.setAlpha(alpha)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(c)
+                p.drawRoundedRect(QRectF(bx, y + 1, seg_w, bar_h - 2), 3, 3)
+                bx += seg_w
+
+            p.setPen(QColor(CLR_DIM))
+            p.setFont(QFont(FONT_MONO, 7))
+            p.drawText(
+                QRectF(w - count_w - 4, y, count_w, bar_h),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                f"{good}G  {ok}O  {poor}P",
+            )
+
+            y += bar_h + gap
+
+        p.end()
 
 
 # ── Main overlay window ──────────────────────────────────────────────
@@ -147,6 +490,10 @@ class MewgentOverlay(QMainWindow):
         self._house_cats: list[SaveCat] = []
         self._available_collars: list[CollarDef] = list(COLLARS)
         self._team_slots: list[dict | None] = [None, None, None, None]
+        self._stat_icons = _load_stat_icons(14)
+
+        self._viable_cats: list[tuple[SaveCat, list[float], int, float]] = []
+        self._overview_page: int = 0
 
         self.setWindowTitle("Mewgent" + (" [DEV]" if dev_mode else ""))
         self.setWindowFlags(
@@ -155,7 +502,7 @@ class MewgentOverlay(QMainWindow):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMinimumSize(520, 400)
+        self.setMinimumSize(460, 560)
 
         self._logo_icon = QIcon(LOGO_PATH)
         self.setWindowIcon(self._logo_icon)
@@ -201,7 +548,7 @@ class MewgentOverlay(QMainWindow):
         root.addWidget(_make_separator())
         self._build_team_panel(root)
         root.addWidget(_make_separator())
-        self._build_scoring_table(root)
+        self._build_overview_section(root)
         root.addWidget(_make_separator())
         self._build_status_bar(root)
 
@@ -250,7 +597,7 @@ class MewgentOverlay(QMainWindow):
                 border-radius: 10px;
             }}
             QPushButton:hover {{
-                color: {CLR_TEXT}; background: rgba(0,0,0,15);
+                color: {CLR_TEXT}; background: rgba(0,0,0,10);
             }}
         """)
         close_btn.clicked.connect(self._quit)
@@ -289,9 +636,15 @@ class MewgentOverlay(QMainWindow):
         self._team_slot_widgets: list[dict[str, Any]] = []
         for i in range(4):
             slot_w = QWidget()
-            slot_w.setStyleSheet("border-radius: 4px;")
+            slot_w.setObjectName(f"teamSlot{i}")
+            slot_w.setStyleSheet(f"""
+                #teamSlot{i} {{
+                    border-radius: 4px;
+                    border-left: 3px solid transparent;
+                }}
+            """)
             slot_lay = QHBoxLayout(slot_w)
-            slot_lay.setContentsMargins(6, 4, 6, 4)
+            slot_lay.setContentsMargins(8, 3, 6, 3)
             slot_lay.setSpacing(6)
 
             slot_num = QLabel(f"{i + 1}.")
@@ -300,10 +653,14 @@ class MewgentOverlay(QMainWindow):
             slot_num.setFixedWidth(18)
             slot_lay.addWidget(slot_num)
 
+            radar_placeholder = QWidget()
+            radar_placeholder.setFixedSize(0, 0)
+            slot_lay.addWidget(radar_placeholder)
+
             slot_name = QLabel("(empty)")
             slot_name.setFont(QFont(FONT_UI, 9))
             slot_name.setStyleSheet(f"color: {CLR_DIM};")
-            slot_name.setMinimumWidth(100)
+            slot_name.setMinimumWidth(80)
             slot_lay.addWidget(slot_name)
             slot_lay.addStretch()
 
@@ -322,6 +679,12 @@ class MewgentOverlay(QMainWindow):
                 QComboBox::drop-down {{
                     border: none;
                     width: 16px;
+                }}
+                QComboBox QAbstractItemView {{
+                    background: {CLR_BG};
+                    color: {CLR_TEXT};
+                    border: 1px solid {CLR_BORDER};
+                    selection-background-color: {CLR_BG_DIM};
                 }}
             """)
             slot_class_combo.setVisible(False)
@@ -343,7 +706,7 @@ class MewgentOverlay(QMainWindow):
                     border-radius: 9px;
                 }}
                 QPushButton:hover {{
-                    color: {CLR_TEXT}; background: rgba(0,0,0,15);
+                    color: {CLR_TEXT}; background: rgba(0,0,0,10);
                 }}
             """)
             remove_btn.setVisible(False)
@@ -357,6 +720,8 @@ class MewgentOverlay(QMainWindow):
                 "combo": slot_class_combo,
                 "score": slot_score,
                 "remove": remove_btn,
+                "radar": radar_placeholder,
+                "layout": slot_lay,
             })
             card_lay.addWidget(slot_w)
 
@@ -372,7 +737,7 @@ class MewgentOverlay(QMainWindow):
                 border: 1px solid {CLR_BORDER}; border-radius: 4px;
                 padding: 2px 14px;
             }}
-            QPushButton:hover {{ background: rgba(107, 93, 79, 50); }}
+            QPushButton:hover {{ background: rgba(0, 0, 0, 18); }}
         """)
         self._autofill_btn.clicked.connect(self._autofill_team)
         btn_row.addWidget(self._autofill_btn)
@@ -386,7 +751,7 @@ class MewgentOverlay(QMainWindow):
                 border: 1px solid {CLR_BORDER}; border-radius: 4px;
                 padding: 2px 10px;
             }}
-            QPushButton:hover {{ color: {CLR_TEXT}; background: rgba(0,0,0,10); }}
+            QPushButton:hover {{ color: {CLR_TEXT}; background: rgba(0,0,0,8); }}
         """)
         clear_btn.clicked.connect(self._clear_team)
         btn_row.addWidget(clear_btn)
@@ -395,33 +760,126 @@ class MewgentOverlay(QMainWindow):
 
         layout.addWidget(card)
 
-    # ── Scoring table (all cats x all classes) ───────────────────────
+    # ── Overview section (4 chart pages) ─────────────────────────────
 
-    def _build_scoring_table(self, layout: QVBoxLayout) -> None:
-        header_row = QHBoxLayout()
-        header_row.setSpacing(4)
+    _TAB_NAMES = ["Stats", "Classes", "Top 3", "Avg"]
 
-        table_lbl = QLabel("CLASS SUITABILITY")
-        table_lbl.setFont(QFont(FONT_MONO, 9, QFont.Weight.Bold))
-        table_lbl.setStyleSheet(f"color: {CLR_ACCENT};")
-        header_row.addWidget(table_lbl)
-        header_row.addStretch()
+    def _build_overview_section(self, layout: QVBoxLayout) -> None:
+        header = QHBoxLayout()
+        header.setSpacing(6)
 
-        self._table_count = QLabel("")
-        self._table_count.setFont(QFont(FONT_MONO, 7))
-        self._table_count.setStyleSheet(f"color: {CLR_DIM};")
-        header_row.addWidget(self._table_count)
-        layout.addLayout(header_row)
+        overview_lbl = QLabel("ROSTER OVERVIEW")
+        overview_lbl.setFont(QFont(FONT_MONO, 9, QFont.Weight.Bold))
+        overview_lbl.setStyleSheet(f"color: {CLR_ACCENT};")
+        header.addWidget(overview_lbl)
+        header.addStretch()
 
-        self._table_scroll = QScrollArea()
-        self._table_scroll.setWidgetResizable(True)
-        self._table_scroll.setMinimumHeight(200)
-        self._table_scroll.setStyleSheet(f"""
-            QScrollArea {{
-                border: 1px solid {CLR_BORDER};
-                border-radius: 6px;
+        self._tab_buttons: list[QPushButton] = []
+        for idx, name in enumerate(self._TAB_NAMES):
+            btn = QPushButton(name)
+            btn.setFont(QFont(FONT_MONO, 8))
+            btn.setFixedHeight(22)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            tab_idx = idx
+            btn.clicked.connect(lambda _c=False, i=tab_idx: self._switch_overview_page(i))
+            self._tab_buttons.append(btn)
+            header.addWidget(btn)
+
+        layout.addLayout(header)
+        self._update_tab_styles()
+
+        card = QWidget()
+        card.setObjectName("overviewCard")
+        card.setStyleSheet(f"""
+            #overviewCard {{
                 background: {CLR_BG_CARD};
+                border: 1px solid {CLR_BORDER};
+                border-radius: 8px;
             }}
+        """)
+        self._overview_card_layout = QVBoxLayout(card)
+        self._overview_card_layout.setContentsMargins(10, 8, 10, 8)
+        self._overview_card_layout.setSpacing(0)
+
+        self._overview_content: QWidget | None = None
+        self._overview_placeholder = QLabel("Save data not loaded yet")
+        self._overview_placeholder.setFont(QFont(FONT_UI, 9))
+        self._overview_placeholder.setStyleSheet(f"color: {CLR_DIM};")
+        self._overview_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._overview_placeholder.setMinimumHeight(160)
+        self._overview_card_layout.addWidget(self._overview_placeholder)
+
+        layout.addWidget(card, 1)
+
+    def _update_tab_styles(self) -> None:
+        for i, btn in enumerate(self._tab_buttons):
+            if i == self._overview_page:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        color: {CLR_TEXT}; background: {CLR_HIGHLIGHT};
+                        border: 1px solid {CLR_BORDER}; border-radius: 4px;
+                        padding: 2px 8px; font-weight: bold;
+                    }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        color: {CLR_DIM}; background: transparent;
+                        border: 1px solid {CLR_BORDER}; border-radius: 4px;
+                        padding: 2px 8px;
+                    }}
+                    QPushButton:hover {{ color: {CLR_TEXT}; background: rgba(0,0,0,6); }}
+                """)
+
+    def _switch_overview_page(self, page: int) -> None:
+        self._overview_page = page
+        self._update_tab_styles()
+        self._render_overview_page()
+
+    def _render_overview_page(self) -> None:
+        if self._overview_content is not None:
+            self._overview_card_layout.removeWidget(self._overview_content)
+            _detach(self._overview_content)
+            self._overview_content = None
+        if self._overview_placeholder is not None:
+            self._overview_card_layout.removeWidget(self._overview_placeholder)
+            _detach(self._overview_placeholder)
+            self._overview_placeholder = None
+
+        cats = [c for c, *_ in self._viable_cats]
+        if not cats:
+            placeholder = QLabel("No viable cats loaded")
+            placeholder.setFont(QFont(FONT_UI, 9))
+            placeholder.setStyleSheet(f"color: {CLR_DIM};")
+            placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            placeholder.setMinimumHeight(160)
+            self._overview_content = placeholder
+            self._overview_card_layout.addWidget(placeholder)
+            return
+
+        page = self._overview_page
+        if page == 0:
+            widget = StatDistributionWidget(cats, self._stat_icons)
+        elif page == 1:
+            widget = ClassFitWidget(cats, self._available_collars)
+        elif page == 2:
+            widget = self._build_top3_page(cats)
+        elif page == 3:
+            widget = self._build_avg_radar_page(cats)
+        else:
+            widget = QLabel("Unknown page")
+
+        self._overview_content = widget
+        self._overview_card_layout.addWidget(widget)
+
+    # ── Page 3: Top 3 per class ──────────────────────────────────────
+
+    def _build_top3_page(self, cats: list[SaveCat]) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setMinimumHeight(160)
+        scroll.setStyleSheet(f"""
+            QScrollArea {{ border: none; background: transparent; }}
             QScrollBar:vertical {{
                 width: 6px; background: transparent;
             }}
@@ -431,15 +889,131 @@ class MewgentOverlay(QMainWindow):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
         """)
 
-        self._table_container = QWidget()
-        self._table_grid = QGridLayout(self._table_container)
-        self._table_grid.setContentsMargins(6, 4, 6, 4)
-        self._table_grid.setSpacing(0)
+        container = QWidget()
+        container_lay = QVBoxLayout(container)
+        container_lay.setContentsMargins(0, 0, 0, 0)
+        container_lay.setSpacing(8)
 
-        self._table_scroll.setWidget(self._table_container)
-        layout.addWidget(self._table_scroll, 1)
+        for collar in self._available_collars:
+            scored: list[tuple[SaveCat, float]] = []
+            for cat in cats:
+                cs = save_cat_to_stats(cat)
+                sc = collar_score(collar, cs)
+                scored.append((cat, sc))
+            scored.sort(key=lambda x: x[1], reverse=True)
+            top3 = scored[:3]
 
-        self._table_cat_rows: list[dict[str, Any]] = []
+            row_w = QWidget()
+            row_lay = QHBoxLayout(row_w)
+            row_lay.setContentsMargins(0, 0, 0, 0)
+            row_lay.setSpacing(8)
+
+            class_lbl = QLabel(collar.name[:6])
+            class_lbl.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
+            class_lbl.setStyleSheet(f"color: {collar.color};")
+            class_lbl.setFixedWidth(52)
+            row_lay.addWidget(class_lbl)
+
+            for cat, sc in top3:
+                entry = QWidget()
+                entry_lay = QHBoxLayout(entry)
+                entry_lay.setContentsMargins(4, 2, 4, 2)
+                entry_lay.setSpacing(4)
+
+                radar = RadarChartWidget(cat=cat, size=40, show_labels=False)
+                entry_lay.addWidget(radar)
+
+                info_lay = QVBoxLayout()
+                info_lay.setSpacing(0)
+                info_lay.setContentsMargins(0, 0, 0, 0)
+
+                name_btn = QPushButton(cat.name[:12])
+                name_btn.setFont(QFont(FONT_UI, 8))
+                name_btn.setFixedHeight(18)
+                name_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                name_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        color: {CLR_TEXT}; background: transparent;
+                        border: none; padding: 0; text-align: left;
+                    }}
+                    QPushButton:hover {{ color: {collar.color}; }}
+                """)
+                cat_ref = cat
+                collar_ref = collar
+                sc_ref = sc
+                name_btn.clicked.connect(
+                    lambda _c=False, ca=cat_ref, co=collar_ref, s=sc_ref: self._add_to_team(ca, co, s)
+                )
+                info_lay.addWidget(name_btn)
+
+                score_lbl = QLabel(f"{sc:.1f}")
+                score_lbl.setFont(QFont(FONT_MONO, 7, QFont.Weight.Bold))
+                score_lbl.setStyleSheet(f"color: {collar.color};")
+                info_lay.addWidget(score_lbl)
+
+                entry_lay.addLayout(info_lay)
+                row_lay.addWidget(entry)
+
+            row_lay.addStretch()
+            container_lay.addWidget(row_w)
+
+        container_lay.addStretch()
+        scroll.setWidget(container)
+        return scroll
+
+    # ── Page 4: Average roster radar ─────────────────────────────────
+
+    def _build_avg_radar_page(self, cats: list[SaveCat]) -> QWidget:
+        n = len(cats)
+        avg_vals = []
+        min_vals = []
+        max_vals = []
+        for stat_key in STAT_ORDER:
+            vals = [getattr(c, f"base_{stat_key}", 0) for c in cats]
+            avg_vals.append(sum(vals) / n if n else 0)
+            min_vals.append(min(vals) if vals else 0)
+            max_vals.append(max(vals) if vals else 0)
+
+        page = QWidget()
+        page_lay = QVBoxLayout(page)
+        page_lay.setContentsMargins(0, 0, 0, 0)
+        page_lay.setSpacing(6)
+
+        title = QLabel(f"Average Stats ({n} cats)")
+        title.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {CLR_DIM};")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        page_lay.addWidget(title)
+
+        radar_row = QHBoxLayout()
+        radar_row.addStretch()
+        radar = RadarChartWidget(
+            values=avg_vals,
+            range_min=min_vals,
+            range_max=max_vals,
+            size=200,
+            show_labels=True,
+        )
+        radar_row.addWidget(radar)
+        radar_row.addStretch()
+        page_lay.addLayout(radar_row)
+
+        # Stat summary labels
+        summary_row = QHBoxLayout()
+        summary_row.setSpacing(4)
+        summary_row.addStretch()
+        for i, stat_key in enumerate(STAT_ORDER):
+            lbl = QLabel(f"{STAT_LABELS[i]} {avg_vals[i]:.1f}")
+            lbl.setFont(QFont(FONT_MONO, 7))
+            color = STAT_COLORS[stat_key] if avg_vals[i] >= 5.5 else CLR_DIM
+            lbl.setStyleSheet(f"color: {color};")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            summary_row.addWidget(lbl)
+        summary_row.addStretch()
+        page_lay.addLayout(summary_row)
+
+        page_lay.addStretch()
+        return page
 
     # ── Status bar ───────────────────────────────────────────────────
 
@@ -454,7 +1028,7 @@ class MewgentOverlay(QMainWindow):
 
     def _setup_tray(self) -> None:
         self._tray = QSystemTrayIcon(self._logo_icon, self)
-        self._tray.setToolTip("Mewgent — Alt+M to toggle")
+        self._tray.setToolTip("Mewgent \u2014 Alt+M to toggle")
 
         menu = QMenu()
         show_action = QAction("Show", self)
@@ -493,7 +1067,7 @@ class MewgentOverlay(QMainWindow):
             combo.addItems(collar_names)
             combo.blockSignals(False)
 
-        self._rebuild_scoring_table()
+        self._rebuild_viable_cats()
         self._refresh_team_scores()
 
         self._status_label.setText(
@@ -501,50 +1075,11 @@ class MewgentOverlay(QMainWindow):
             f"({len(self._house_cats)} in house)"
         )
 
-    # ── Scoring table rebuild ────────────────────────────────────────
+    # ── Viable cats computation ──────────────────────────────────────
 
-    def _rebuild_scoring_table(self) -> None:
-        # Clear grid (but don't touch placeholder -- it may already be deleted)
-        while self._table_grid.count():
-            item = self._table_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self._table_cat_rows.clear()
-
+    def _rebuild_viable_cats(self) -> None:
         collars = self._available_collars
-        num_collars = len(collars)
-        self._table_count.setText(f"{len(self._house_cats)} cats \u00d7 {num_collars} classes")
-
-        # Header row
-        name_header = QLabel("Cat")
-        name_header.setFont(QFont(FONT_MONO, 7, QFont.Weight.Bold))
-        name_header.setStyleSheet(f"color: {CLR_ACCENT}; padding: 2px 4px;")
-        self._table_grid.addWidget(name_header, 0, 0)
-
-        lv_header = QLabel("Lv")
-        lv_header.setFont(QFont(FONT_MONO, 7, QFont.Weight.Bold))
-        lv_header.setStyleSheet(f"color: {CLR_ACCENT}; padding: 2px 2px;")
-        lv_header.setFixedWidth(22)
-        lv_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._table_grid.addWidget(lv_header, 0, 1)
-
-        for j, collar in enumerate(collars):
-            hdr = QLabel(collar.name[:4])
-            hdr.setFont(QFont(FONT_MONO, 7, QFont.Weight.Bold))
-            hdr.setStyleSheet(f"color: {collar.color}; padding: 2px 2px;")
-            hdr.setFixedWidth(36)
-            hdr.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            hdr.setToolTip(collar.name)
-            self._table_grid.addWidget(hdr, 0, j + 2)
-
-        # Separator line after header
-        sep = QLabel()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background: {CLR_BORDER};")
-        self._table_grid.addWidget(sep, 1, 0, 1, num_collars + 2)
-
-        # Viable cats: skip zero-stat cats
-        viable_cats: list[tuple[SaveCat, list[float], int, float]] = []
+        self._viable_cats = []
         for cat in self._house_cats:
             if cat.age == 0 and all(
                 getattr(cat, f"base_{s}") == 0
@@ -554,86 +1089,17 @@ class MewgentOverlay(QMainWindow):
             cs = save_cat_to_stats(cat)
             scores = [collar_score(c, cs) for c in collars]
             best_idx = max(range(len(scores)), key=lambda k: scores[k])
-            viable_cats.append((cat, scores, best_idx, scores[best_idx]))
+            self._viable_cats.append((cat, scores, best_idx, scores[best_idx]))
 
-        viable_cats.sort(key=lambda x: x[3], reverse=True)
+        self._viable_cats.sort(key=lambda x: x[3], reverse=True)
+        self._render_overview_page()
 
-        cats_in_team = {
-            slot["cat"].db_key for slot in self._team_slots if slot is not None
-        }
-
-        for row_i, (cat, scores, best_idx, best_score) in enumerate(viable_cats):
-            grid_row = row_i + 2
-            in_team = cat.db_key in cats_in_team
-
-            # Cat name
-            name_lbl = QLabel(cat.name)
-            name_lbl.setFont(QFont(FONT_UI, 8))
-            name_lbl.setStyleSheet(
-                f"color: {CLR_TEXT}; padding: 3px 4px; font-weight: bold;"
-                if in_team else f"color: {CLR_TEXT}; padding: 3px 4px;"
-            )
-            name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
-            cat_ref = cat
-            name_lbl.mousePressEvent = lambda _e, c=cat_ref: self._on_table_cat_click(c)
-            self._table_grid.addWidget(name_lbl, grid_row, 0)
-
-            # Level
-            lv_lbl = QLabel(str(cat.level))
-            lv_lbl.setFont(QFont(FONT_MONO, 7))
-            lv_lbl.setStyleSheet(f"color: {CLR_DIM}; padding: 3px 2px;")
-            lv_lbl.setFixedWidth(22)
-            lv_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._table_grid.addWidget(lv_lbl, grid_row, 1)
-
-            # Score cells
-            for j, score_val in enumerate(scores):
-                is_best = (j == best_idx)
-                cell = _score_cell(score_val, is_best, collars[j].color)
-                cell.setFixedWidth(36)
-                cell.setStyleSheet(
-                    cell.styleSheet() + " padding: 3px 2px;"
-                )
-                if in_team:
-                    cell.setStyleSheet(
-                        cell.styleSheet() + f" background: {CLR_HIGHLIGHT};"
-                    )
-                cell.setCursor(Qt.CursorShape.PointingHandCursor)
-                collar_ref = collars[j]
-                cell.mousePressEvent = lambda _e, c=cat_ref, co=collar_ref: self._on_table_cell_click(c, co)
-                self._table_grid.addWidget(cell, grid_row, j + 2)
-
-            self._table_cat_rows.append({
-                "cat": cat,
-                "scores": scores,
-                "best_idx": best_idx,
-                "row": grid_row,
-            })
-
-    def _on_table_cat_click(self, cat: SaveCat) -> None:
-        """Add the cat to the next empty slot with their best class."""
-        cs = save_cat_to_stats(cat)
-        best_collar = self._available_collars[0]
-        best_score = -999.0
-        for c in self._available_collars:
-            s = collar_score(c, cs)
-            if s > best_score:
-                best_score = s
-                best_collar = c
-        self._add_to_team(cat, best_collar, best_score)
-
-    def _on_table_cell_click(self, cat: SaveCat, collar: CollarDef) -> None:
-        """Add the cat with a specific class to the next empty slot."""
-        cs = save_cat_to_stats(cat)
-        score = collar_score(collar, cs)
-        self._add_to_team(cat, collar, score)
+    # ── Team slot management ─────────────────────────────────────────
 
     def _add_to_team(self, cat: SaveCat, collar: CollarDef, score: float) -> None:
-        # Don't add the same cat twice
         for slot in self._team_slots:
             if slot is not None and slot["cat"].db_key == cat.db_key:
                 return
-
         for i, slot in enumerate(self._team_slots):
             if slot is None:
                 self._team_slots[i] = {
@@ -642,32 +1108,43 @@ class MewgentOverlay(QMainWindow):
                     "score": score,
                 }
                 self._refresh_team_ui()
-                self._rebuild_scoring_table()
                 return
-
-    # ── Team slot management ─────────────────────────────────────────
 
     def _remove_team_slot(self, idx: int) -> None:
         self._team_slots[idx] = None
         self._refresh_team_ui()
-        self._rebuild_scoring_table()
 
     def _clear_team(self) -> None:
         self._team_slots = [None, None, None, None]
         self._refresh_team_ui()
-        self._rebuild_scoring_table()
 
     def _refresh_team_ui(self) -> None:
         total_score = 0.0
         for i, slot in enumerate(self._team_slots):
             sw = self._team_slot_widgets[i]
+            obj_name = f"teamSlot{i}"
+
+            old_radar = sw.get("radar")
+            if old_radar is not None:
+                sw["layout"].removeWidget(old_radar)
+                _detach(old_radar)
+
             if slot is None:
                 sw["name"].setText("(empty)")
                 sw["name"].setStyleSheet(f"color: {CLR_DIM};")
                 sw["score"].setText("")
                 sw["combo"].setVisible(False)
                 sw["remove"].setVisible(False)
-                sw["widget"].setStyleSheet("border-radius: 4px;")
+                sw["widget"].setStyleSheet(f"""
+                    #{obj_name} {{
+                        border-radius: 4px;
+                        border-left: 3px solid transparent;
+                    }}
+                """)
+                placeholder = QWidget()
+                placeholder.setFixedSize(0, 0)
+                sw["layout"].insertWidget(1, placeholder)
+                sw["radar"] = placeholder
             else:
                 cat = slot["cat"]
                 collar = slot["collar"]
@@ -677,9 +1154,17 @@ class MewgentOverlay(QMainWindow):
                 sw["score"].setText(f"{score:.1f}")
                 sw["combo"].setVisible(True)
                 sw["remove"].setVisible(True)
-                sw["widget"].setStyleSheet(
-                    f"background: {CLR_HIGHLIGHT}; border-radius: 4px;"
-                )
+                sw["widget"].setStyleSheet(f"""
+                    #{obj_name} {{
+                        background: {CLR_HIGHLIGHT};
+                        border-radius: 4px;
+                        border-left: 3px solid {collar.color};
+                    }}
+                """)
+
+                radar = RadarChartWidget(cat=cat, size=48, show_labels=False)
+                sw["layout"].insertWidget(1, radar)
+                sw["radar"] = radar
 
                 combo: QComboBox = sw["combo"]
                 combo.blockSignals(True)
@@ -689,10 +1174,8 @@ class MewgentOverlay(QMainWindow):
                         break
                 combo.blockSignals(False)
 
-                try:
+                if combo.receivers(combo.currentTextChanged) > 0:
                     combo.currentTextChanged.disconnect()
-                except (RuntimeError, TypeError):
-                    pass
                 slot_idx = i
                 combo.currentTextChanged.connect(
                     lambda text, idx=slot_idx: self._on_slot_class_changed(idx, text)
@@ -763,7 +1246,6 @@ class MewgentOverlay(QMainWindow):
             used_collar_names.add(collar.name)
 
         self._refresh_team_ui()
-        self._rebuild_scoring_table()
 
     # ── Window chrome ────────────────────────────────────────────────
 
@@ -809,7 +1291,7 @@ class MewgentOverlay(QMainWindow):
         if geo:
             self.restoreGeometry(geo)
         else:
-            self.resize(560, 620)
+            self.resize(480, 720)
             self.move(100, 100)
 
     def closeEvent(self, event) -> None:

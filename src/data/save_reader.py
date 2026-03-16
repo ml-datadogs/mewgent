@@ -163,43 +163,6 @@ def _parse_house_keys(cursor: sqlite3.Cursor) -> set[int]:
     return keys
 
 
-def _load_full_names(cursor: sqlite3.Cursor) -> dict[int, str]:
-    """Load full (untruncated) cat names from name_gen_history_w.
-
-    Returns a dict mapping 1-based cat key -> full name.
-    """
-    try:
-        row = cursor.execute(
-            "SELECT data FROM files WHERE key = 'name_gen_history_w'"
-        ).fetchone()
-    except sqlite3.Error:
-        log.warning("Failed to read name_gen_history_w")
-        return {}
-    if not row or not row[0]:
-        return {}
-
-    blob: bytes = row[0]
-    if len(blob) < 8:
-        return {}
-
-    count = struct.unpack_from("<Q", blob, 0)[0]
-    names: dict[int, str] = {}
-    pos = 8
-    for i in range(count):
-        if pos + 8 > len(blob):
-            break
-        nlen = struct.unpack_from("<Q", blob, pos)[0]
-        pos += 8
-        if pos + nlen * 2 > len(blob):
-            break
-        name = blob[pos : pos + nlen * 2].decode("utf-16-le", errors="replace")
-        pos += nlen * 2
-        names[i + 1] = name
-
-    log.debug("name_gen_history_w: %d names loaded", len(names))
-    return names
-
-
 def _parse_unlocks(cursor: sqlite3.Cursor) -> tuple[list[str], list[str], list[str]]:
     """Parse the unlocks blob to extract unlocked classes, abilities, passives.
 
@@ -383,11 +346,9 @@ def read_save(path: str | Path) -> SaveData:
         except sqlite3.Error:
             log.warning("Failed to read properties table")
 
-        # House state, full names, and unlocks
+        # House state and unlocks
         house_keys = _parse_house_keys(cursor)
         result.house_cat_keys = house_keys
-
-        full_names = _load_full_names(cursor)
 
         classes, abilities, passives = _parse_unlocks(cursor)
         result.unlocked_classes = classes
@@ -407,9 +368,6 @@ def read_save(path: str | Path) -> SaveData:
                 if cat is None:
                     log.debug("Failed to parse cat #%d", db_key)
                     continue
-
-                if db_key in full_names:
-                    cat.name = full_names[db_key]
 
                 if db_key in house_keys:
                     cat.status = "in_house"
