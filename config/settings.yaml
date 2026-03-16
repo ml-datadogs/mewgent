@@ -18,3 +18,8 @@ logging:
 debug:
   save_screenshots: false
   screenshots_dir: "debug_screenshots"
+
+save_file:
+  enabled: true
+  path: ""
+  poll_interval_ms: 2000

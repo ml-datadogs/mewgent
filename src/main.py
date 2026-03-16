@@ -156,6 +156,26 @@ def run_headless(cfg: AppConfig) -> None:
         db.close()
 
 
+def _resolve_save_path(cfg: AppConfig) -> Path | None:
+    """Return the save file path from config, or auto-detect the most recent."""
+    from src.data.save_reader import find_save_files
+
+    if cfg.save_file.path:
+        p = Path(cfg.save_file.path)
+        if p.exists():
+            return p
+        log.warning("Configured save path does not exist: %s", p)
+
+    saves = find_save_files()
+    if not saves:
+        log.warning("No Mewgenics save files found — save watcher disabled")
+        return None
+
+    best = max(saves, key=lambda p: p.stat().st_mtime)
+    log.info("Auto-detected save file: %s", best)
+    return best
+
+
 def run_gui(cfg: AppConfig) -> None:
     """Main entry point with PySide6 overlay."""
     from PySide6.QtWidgets import QApplication
@@ -163,8 +183,19 @@ def run_gui(cfg: AppConfig) -> None:
     from src.ui.overlay import MewgentOverlay
 
     app = QApplication(sys.argv)
-    pipeline = _build_pipeline(cfg)
-    overlay = MewgentOverlay(cfg, pipeline)
+
+    stub_pipeline = (None, None, None, None, None, None, None)
+
+    save_watcher = None
+    if cfg.save_file.enabled:
+        save_path = _resolve_save_path(cfg)
+        if save_path:
+            from src.capture.save_watcher import SaveWatcher
+            save_watcher = SaveWatcher(
+                save_path, poll_ms=cfg.save_file.poll_interval_ms,
+            )
+
+    overlay = MewgentOverlay(cfg, stub_pipeline, save_watcher=save_watcher)
     overlay.show()
     sys.exit(app.exec())
 
@@ -182,7 +213,16 @@ def run_dev_ui(cfg: AppConfig) -> None:
 
     stub_pipeline = (None, None, None, None, None, None, None)
 
-    overlay = MewgentOverlay(cfg, stub_pipeline, dev_mode=True)
+    save_watcher = None
+    if cfg.save_file.enabled:
+        save_path = _resolve_save_path(cfg)
+        if save_path:
+            from src.capture.save_watcher import SaveWatcher
+            save_watcher = SaveWatcher(
+                save_path, poll_ms=cfg.save_file.poll_interval_ms,
+            )
+
+    overlay = MewgentOverlay(cfg, stub_pipeline, dev_mode=True, save_watcher=save_watcher)
     overlay.show()
     log.info("Dev UI mode active — showing overlay with mock data")
     sys.exit(app.exec())

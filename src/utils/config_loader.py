@@ -44,6 +44,13 @@ class DebugConfig:
 
 
 @dataclass
+class SaveFileConfig:
+    enabled: bool = True
+    path: str = ""
+    poll_interval_ms: int = 2000
+
+
+@dataclass
 class RegionDef:
     """Definition for a single OCR region.
 
@@ -84,6 +91,7 @@ class AppConfig:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
+    save_file: SaveFileConfig = field(default_factory=SaveFileConfig)
     regions: RegionsConfig = field(default_factory=RegionsConfig)
 
 
@@ -119,6 +127,7 @@ def load_config() -> AppConfig:
         database=DatabaseConfig(**settings_raw.get("database", {})),
         logging=LoggingConfig(**settings_raw.get("logging", {})),
         debug=DebugConfig(**settings_raw.get("debug", {})),
+        save_file=SaveFileConfig(**settings_raw.get("save_file", {})),
         regions=_build_regions_config(regions_raw),
     )
 

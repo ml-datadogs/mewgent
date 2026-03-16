@@ -16,6 +16,16 @@ _STAT_ATTR = {
     "LCK": "stat_lck",
 }
 
+CLASS_TO_COLLAR: dict[str, str] = {
+    "Fighter": "Fighter",
+    "Hunter": "Ranger",
+    "Mage": "Mage",
+    "Medic": "Cleric",
+    "Tank": "Tank",
+    "Thief": "Thief",
+    "Necromancer": "Necromancer",
+}
+
 
 @dataclass(frozen=True)
 class CollarDef:
@@ -88,3 +98,36 @@ def compute_collar_scores(stats: CatStats) -> list[tuple[CollarDef, float]]:
     scored = [(c, collar_score(c, stats)) for c in COLLARS]
     scored.sort(key=lambda pair: pair[1], reverse=True)
     return scored
+
+
+_COLLAR_BY_NAME: dict[str, CollarDef] = {c.name: c for c in COLLARS}
+
+
+def collar_by_name(name: str) -> CollarDef | None:
+    return _COLLAR_BY_NAME.get(name)
+
+
+def unlocked_collars(unlocked_classes: list[str]) -> list[CollarDef]:
+    """Return only the collars whose game class is in the unlocked set."""
+    result: list[CollarDef] = []
+    for cls in unlocked_classes:
+        collar_name = CLASS_TO_COLLAR.get(cls)
+        if collar_name and collar_name in _COLLAR_BY_NAME:
+            result.append(_COLLAR_BY_NAME[collar_name])
+    return result
+
+
+def save_cat_to_stats(sc: "SaveCat") -> CatStats:  # noqa: F821
+    """Bridge a SaveCat (base stats only) into a CatStats for scoring."""
+    from src.data.stat_parser import CatStats, StatValue
+
+    return CatStats(
+        cat_name=sc.name,
+        stat_str=StatValue(total=sc.base_str, base=sc.base_str, bonus=0),
+        stat_dex=StatValue(total=sc.base_dex, base=sc.base_dex, bonus=0),
+        stat_con=StatValue(total=sc.base_con, base=sc.base_con, bonus=0),
+        stat_int=StatValue(total=sc.base_int, base=sc.base_int, bonus=0),
+        stat_spd=StatValue(total=sc.base_spd, base=sc.base_spd, bonus=0),
+        stat_cha=StatValue(total=sc.base_cha, base=sc.base_cha, bonus=0),
+        stat_lck=StatValue(total=sc.base_lck, base=sc.base_lck, bonus=0),
+    )
