@@ -1174,8 +1174,12 @@ class MewgentOverlay(QMainWindow):
                         break
                 combo.blockSignals(False)
 
-                if combo.receivers(combo.currentTextChanged) > 0:
+                combo.blockSignals(True)
+                try:
                     combo.currentTextChanged.disconnect()
+                except RuntimeError:
+                    pass
+                combo.blockSignals(False)
                 slot_idx = i
                 combo.currentTextChanged.connect(
                     lambda text, idx=slot_idx: self._on_slot_class_changed(idx, text)

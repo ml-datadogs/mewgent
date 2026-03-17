@@ -25,6 +25,9 @@ data/*.log.*
 debug_screenshots/*.png
 *.log
 
+# Wiki scraper output
+wiki_data/
+
 # OS
 Thumbs.db
 Desktop.ini

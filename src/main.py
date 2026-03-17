@@ -204,6 +204,8 @@ def run_dev_ui(cfg: AppConfig) -> None:
     """Launch the overlay with mock data for UI development.
 
     No capture pipeline, no Win32 calls — works on macOS and Windows.
+    When no real save file is available, a MockSaveWatcher provides
+    realistic fake data so every UI widget is populated.
     """
     from PySide6.QtWidgets import QApplication
 
@@ -221,6 +223,11 @@ def run_dev_ui(cfg: AppConfig) -> None:
             save_watcher = SaveWatcher(
                 save_path, poll_ms=cfg.save_file.poll_interval_ms,
             )
+
+    if save_watcher is None:
+        from src.capture.mock_save_watcher import MockSaveWatcher
+        save_watcher = MockSaveWatcher()
+        log.info("No save file — using mock save data for dev UI")
 
     overlay = MewgentOverlay(cfg, stub_pipeline, dev_mode=True, save_watcher=save_watcher)
     overlay.show()
