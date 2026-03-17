@@ -177,14 +177,13 @@ def _resolve_save_path(cfg: AppConfig) -> Path | None:
 
 
 def run_gui(cfg: AppConfig) -> None:
-    """Main entry point with PySide6 overlay."""
+    """Main entry point with PySide6 overlay + React UI."""
     from PySide6.QtWidgets import QApplication
 
-    from src.ui.overlay import MewgentOverlay
+    from src.ui.bridge import OverlayBridge
+    from src.ui.overlay_shell import OverlayShell
 
     app = QApplication(sys.argv)
-
-    stub_pipeline = (None, None, None, None, None, None, None)
 
     save_watcher = None
     if cfg.save_file.enabled:
@@ -195,7 +194,8 @@ def run_gui(cfg: AppConfig) -> None:
                 save_path, poll_ms=cfg.save_file.poll_interval_ms,
             )
 
-    overlay = MewgentOverlay(cfg, stub_pipeline, save_watcher=save_watcher)
+    bridge = OverlayBridge(cfg)
+    overlay = OverlayShell(cfg, bridge, save_watcher=save_watcher)
     overlay.show()
     sys.exit(app.exec())
 
@@ -209,11 +209,10 @@ def run_dev_ui(cfg: AppConfig) -> None:
     """
     from PySide6.QtWidgets import QApplication
 
-    from src.ui.overlay import MewgentOverlay
+    from src.ui.bridge import OverlayBridge
+    from src.ui.overlay_shell import OverlayShell
 
     app = QApplication(sys.argv)
-
-    stub_pipeline = (None, None, None, None, None, None, None)
 
     save_watcher = None
     if cfg.save_file.enabled:
@@ -229,7 +228,8 @@ def run_dev_ui(cfg: AppConfig) -> None:
         save_watcher = MockSaveWatcher()
         log.info("No save file — using mock save data for dev UI")
 
-    overlay = MewgentOverlay(cfg, stub_pipeline, dev_mode=True, save_watcher=save_watcher)
+    bridge = OverlayBridge(cfg)
+    overlay = OverlayShell(cfg, bridge, dev_mode=True, save_watcher=save_watcher)
     overlay.show()
     log.info("Dev UI mode active — showing overlay with mock data")
     sys.exit(app.exec())
