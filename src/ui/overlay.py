@@ -606,6 +606,7 @@ class MewgentOverlay(QMainWindow):
         self._llm = LLMAdvisor(
             model=cfg.llm.model,
             enabled=cfg.llm.enabled,
+            mock=cfg.llm.mock,
         )
         self._llm_worker: _LLMTeamWorker | None = None
         self._llm_explain_workers: list[_LLMExplainWorker] = []

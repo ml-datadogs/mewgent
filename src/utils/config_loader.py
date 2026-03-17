@@ -54,6 +54,7 @@ class SaveFileConfig:
 class LLMConfig:
     enabled: bool = False
     model: str = "gpt-4o-mini"
+    mock: bool = False
 
 
 @dataclass

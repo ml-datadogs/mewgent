@@ -25,5 +25,6 @@ save_file:
   poll_interval_ms: 2000
 
 llm:
-  enabled: false
+  enabled: true
   model: gpt-4o-mini
+  mock: true

@@ -18,21 +18,27 @@ _CAT_NAMES = [
     "Cleo", "Gizmo", "Noodle", "Biscuit",
 ]
 
-_CLASSES = ["Fighter", "Hunter", "Mage", "Medic", "Tank", "Thief", "Necromancer"]
+_CLASSES = [
+    "Fighter", "Hunter", "Mage", "Medic", "Tank", "Thief", "Necromancer",
+    "Tinkerer", "Butcher", "Druid", "Psychic", "Monk",
+]
 
 _ABILITIES = [
     "Fireball", "IceBlast", "HealingTouch", "ShadowStrike",
     "ShieldBash", "PoisonBite", "Resurrect", "TrapSet",
+    "Bullseye", "MegaBlast", "CraftArrow", "Brainstorm",
+    "Seppuku", "WolfClaws", "Reposition", "Blizzard",
 ]
 
 _PASSIVES = [
     "NineLives", "CatReflexes", "ThickFur", "NightVision",
     "Purrsistence", "SharpClaws", "SoftPaws", "Curiosity",
+    "ThickSkull", "EternalHealth", "MadVisage", "PawMissile",
 ]
 
 
 def _random_stat() -> int:
-    return random.randint(1, 20)
+    return random.randint(3, 7)
 
 
 def _make_mock_cats(count: int = 12) -> list[SaveCat]:

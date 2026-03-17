@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -19,6 +21,31 @@ You are an expert advisor for the game Mewgenics. You analyze cat stats, \
 abilities, and class mechanics to recommend optimal class assignments and \
 team compositions. Always respond with valid JSON matching the requested schema.\
 """
+
+_ROLE_TAGS: dict[str, str] = {
+    "Fighter": "melee DPS",
+    "Hunter": "ranged DPS",
+    "Mage": "magic DPS",
+    "Tank": "frontline tank",
+    "Cleric": "healer/support",
+    "Thief": "fast striker",
+    "Necromancer": "sustain caster",
+    "Tinkerer": "gadget specialist",
+    "Butcher": "bruiser",
+    "Druid": "summoner/support",
+    "Psychic": "control caster",
+    "Monk": "versatile hybrid",
+    "Jester": "wildcard",
+    "Collarless": "generalist",
+}
+
+_MOCK_EXPLANATIONS = [
+    "High {stat} makes this cat a natural {role}, and {ability} synergizes well with the class kit.",
+    "With strong {stat}, this cat excels as a {role}. {ability} provides additional utility.",
+    "This cat's {stat} is outstanding for the {role} role, though low {weak} is a minor concern.",
+    "Excellent {stat} combined with {ability} makes this an ideal {role} pick.",
+    "A solid {role} candidate -- {stat} is well above average for the class needs.",
+]
 
 
 def _load_wiki_context() -> str:
@@ -44,21 +71,31 @@ def _cat_summary(cat: SaveCat) -> str:
 
 
 class LLMAdvisor:
-    """OpenAI-powered advisor for class scoring, team synergy, and explanations.
+    """Advisor for class scoring, team synergy, and explanations.
 
-    Gracefully degrades to None/empty results if the API key is missing or
-    the LLM is disabled in config.
+    Supports three modes:
+    - Real: Uses OpenAI API (requires OPENAI_API_KEY)
+    - Mock: Returns realistic fake data with simulated latency (for dev/demo)
+    - Disabled: Returns empty/None for all methods
     """
 
-    def __init__(self, *, model: str = "gpt-4o-mini", enabled: bool = True) -> None:
+    def __init__(
+        self, *, model: str = "gpt-4o-mini", enabled: bool = True, mock: bool = False,
+    ) -> None:
         self._model = model
         self._enabled = enabled
+        self._mock = mock
         self._client: Any = None
         self._wiki_context: str = ""
         self._explanation_cache: dict[str, str] = {}
 
         if not enabled:
             log.info("LLM advisor disabled in config")
+            return
+
+        if mock:
+            self._enabled = True
+            log.info("LLM advisor running in MOCK mode")
             return
 
         api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -78,10 +115,12 @@ class LLMAdvisor:
 
     @property
     def available(self) -> bool:
+        if self._mock:
+            return self._enabled
         return self._enabled and self._client is not None
 
     def _chat(self, messages: list[dict[str, str]], temperature: float = 0.3) -> str | None:
-        if not self.available:
+        if not self.available or self._mock:
             return None
         try:
             resp = self._client.chat.completions.create(
@@ -109,6 +148,9 @@ class LLMAdvisor:
         """
         if not self.available or not cat.abilities:
             return {}
+
+        if self._mock:
+            return self._mock_ability_adjustments(cat, base_scores)
 
         collar_list = ", ".join(f"{c.name} ({s:.1f})" for c, s in base_scores)
         prompt = (
@@ -143,6 +185,17 @@ class LLMAdvisor:
             log.warning("Failed to parse ability adjustment response")
             return {}
 
+    def _mock_ability_adjustments(
+        self,
+        cat: "SaveCat",
+        base_scores: list[tuple[CollarDef, float]],
+    ) -> dict[str, float]:
+        rng = random.Random(cat.db_key)
+        return {
+            c.name: round(rng.uniform(-0.8, 1.2), 1)
+            for c, _ in base_scores
+        }
+
     # ── Team synergy ─────────────────────────────────────────────────
 
     def suggest_team_composition(
@@ -153,16 +206,14 @@ class LLMAdvisor:
     ) -> list[dict[str, Any]] | None:
         """Suggest a balanced 4-cat team using LLM reasoning.
 
-        Args:
-            cats: Available house cats.
-            collars: Unlocked collars.
-            base_scores: Mapping from cat db_key to list of (collar, score) pairs.
-
         Returns list of 4 dicts with keys: cat_name, cat_db_key, collar_name,
         score, reason. Returns None if LLM unavailable.
         """
         if not self.available or len(cats) < 2:
             return None
+
+        if self._mock:
+            return self._mock_team_composition(cats, collars, base_scores)
 
         cat_summaries = "\n".join(_cat_summary(c) for c in cats[:20])
         collar_names = [c.name for c in collars]
@@ -210,6 +261,50 @@ class LLMAdvisor:
             log.warning("Failed to parse team composition response")
             return None
 
+    def _mock_team_composition(
+        self,
+        cats: list["SaveCat"],
+        collars: list["CollarDef"],
+        base_scores: dict[int, list[tuple["CollarDef", float]]],
+    ) -> list[dict[str, Any]]:
+        time.sleep(0.8)
+
+        desired_roles = ["Tank", "Cleric", "Fighter", "Mage"]
+        collar_by_name = {c.name: c for c in collars}
+        available_roles = [r for r in desired_roles if r in collar_by_name]
+        if len(available_roles) < 4:
+            extra = [c.name for c in collars if c.name not in available_roles]
+            available_roles.extend(extra[:4 - len(available_roles)])
+
+        used_cats: set[int] = set()
+        result: list[dict[str, Any]] = []
+
+        for role in available_roles[:4]:
+            best_cat = None
+            best_score = -999.0
+            for cat in cats:
+                if cat.db_key in used_cats:
+                    continue
+                scores = base_scores.get(cat.db_key, [])
+                for collar, score in scores:
+                    if collar.name == role and score > best_score:
+                        best_score = score
+                        best_cat = cat
+
+            if best_cat is None:
+                continue
+
+            tag = _ROLE_TAGS.get(role, "specialist")
+            result.append({
+                "cat_name": best_cat.name,
+                "cat_db_key": best_cat.db_key,
+                "collar_name": role,
+                "reason": f"Best {tag} candidate with a score of {best_score:.1f}.",
+            })
+            used_cats.add(best_cat.db_key)
+
+        return result
+
     # ── Explanations ─────────────────────────────────────────────────
 
     def explain_recommendation(
@@ -230,6 +325,9 @@ class LLMAdvisor:
         if not self.available:
             return None
 
+        if self._mock:
+            return self._mock_explanation(cat, collar, score)
+
         prompt = (
             f"Explain why this cat is a good or bad fit for this class. "
             f"Be concise (1-2 sentences).\n\n"
@@ -249,6 +347,32 @@ class LLMAdvisor:
             self._explanation_cache[cache_key] = explanation
             return explanation
         return None
+
+    def _mock_explanation(
+        self,
+        cat: "SaveCat",
+        collar: "CollarDef",
+        score: float,
+    ) -> str:
+        time.sleep(0.3)
+
+        stat_map = {
+            "STR": cat.base_str, "DEX": cat.base_dex, "CON": cat.base_con,
+            "INT": cat.base_int, "SPD": cat.base_spd, "CHA": cat.base_cha,
+            "LCK": cat.base_lck,
+        }
+        best_stat = max(stat_map, key=lambda k: stat_map[k])
+        worst_stat = min(stat_map, key=lambda k: stat_map[k])
+        ability = cat.abilities[0] if cat.abilities else "their base stats"
+        role = _ROLE_TAGS.get(collar.name, "specialist")
+
+        rng = random.Random(cat.db_key + hash(collar.name))
+        template = rng.choice(_MOCK_EXPLANATIONS)
+        explanation = template.format(
+            stat=best_stat, role=role, ability=ability, weak=worst_stat,
+        )
+        self._explanation_cache[f"{cat.db_key}:{collar.name}"] = explanation
+        return explanation
 
     def clear_cache(self) -> None:
         self._explanation_cache.clear()
