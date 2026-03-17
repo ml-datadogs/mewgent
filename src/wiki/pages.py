@@ -12,6 +12,7 @@ WIKI_PAGES: dict[str, str] = {
     "classes": "https://mewgenics.wiki.gg/wiki/Classes",
     "stats": "https://mewgenics.wiki.gg/wiki/Stats",
     "breeding": "https://mewgenics.wiki.gg/wiki/Breeding",
+    "abilities": "https://mewgenics.wiki.gg/wiki/Abilities",
 }
 
 

@@ -51,6 +51,12 @@ class SaveFileConfig:
 
 
 @dataclass
+class LLMConfig:
+    enabled: bool = False
+    model: str = "gpt-4o-mini"
+
+
+@dataclass
 class RegionDef:
     """Definition for a single OCR region.
 
@@ -92,6 +98,7 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
     save_file: SaveFileConfig = field(default_factory=SaveFileConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)
     regions: RegionsConfig = field(default_factory=RegionsConfig)
 
 
@@ -128,6 +135,7 @@ def load_config() -> AppConfig:
         logging=LoggingConfig(**settings_raw.get("logging", {})),
         debug=DebugConfig(**settings_raw.get("debug", {})),
         save_file=SaveFileConfig(**settings_raw.get("save_file", {})),
+        llm=LLMConfig(**settings_raw.get("llm", {})),
         regions=_build_regions_config(regions_raw),
     )
 

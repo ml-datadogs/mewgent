@@ -41,6 +41,7 @@ from src.data.collars import (
     unlocked_collars,
 )
 from src.data.save_reader import SaveCat, SaveData
+from src.llm.advisor import LLMAdvisor
 from src.utils.config_loader import PROJECT_ROOT, AppConfig
 
 log = logging.getLogger("mewgent.ui.overlay")
@@ -110,6 +111,41 @@ def _load_stat_icons(size: int = 14) -> dict[str, QPixmap]:
         if pix.isNull():
             continue
         icons[stat_key] = pix.scaled(
+            size, size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+    return icons
+
+
+CLASS_ICON_DIR = PROJECT_ROOT / "wiki_data" / "images" / "classes"
+
+CLASS_ICON_FILES: dict[str, str] = {
+    "Collarless": "Collarless_Icon.png",
+    "Fighter": "Fighter_Icon.png",
+    "Hunter": "Hunter_Icon.png",
+    "Mage": "Mage_Icon.png",
+    "Tank": "Tank_Icon.png",
+    "Cleric": "Cleric_Icon.png",
+    "Thief": "Thief_Icon.png",
+    "Necromancer": "Necromancer_Icon.png",
+    "Tinkerer": "Tinkerer_Icon.png",
+    "Butcher": "Butcher_Icon.png",
+    "Druid": "Druid_Icon.png",
+    "Psychic": "Psychic_Icon.png",
+    "Monk": "Monk_Icon.png",
+    "Jester": "Jester_Icon.png",
+}
+
+
+def _load_class_icons(size: int = 18) -> dict[str, QPixmap]:
+    icons: dict[str, QPixmap] = {}
+    for collar_name, filename in CLASS_ICON_FILES.items():
+        path = CLASS_ICON_DIR / filename
+        pix = QPixmap(str(path))
+        if pix.isNull():
+            continue
+        icons[collar_name] = pix.scaled(
             size, size,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
@@ -394,11 +430,13 @@ class ClassFitWidget(QWidget):
         self,
         cats: list[SaveCat],
         collars: list[CollarDef],
+        class_icons: dict[str, QPixmap] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._cats = cats
         self._collars = collars
+        self._class_icons = class_icons or {}
         self.setMinimumHeight(max(120, 24 * len(collars) + 20))
 
     def paintEvent(self, event) -> None:
@@ -416,7 +454,7 @@ class ClassFitWidget(QWidget):
 
         bar_h = 16
         gap = 6
-        label_w = 60
+        label_w = 74
         count_w = 60
         bar_area = w - label_w - count_w - 10
         y = 8
@@ -435,10 +473,20 @@ class ClassFitWidget(QWidget):
 
             base_color = QColor(collar.color)
 
+            icon_x = 4
+            icon = self._class_icons.get(collar.name)
+            if icon:
+                p.drawPixmap(icon_x, int(y + (bar_h - 14) / 2), icon.scaled(
+                    14, 14,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                ))
+                icon_x += 18
+
             p.setPen(base_color)
             p.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
             p.drawText(
-                QRectF(4, y, label_w - 4, bar_h),
+                QRectF(icon_x, y, label_w - icon_x, bar_h),
                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                 collar.name[:6],
             )
@@ -468,6 +516,68 @@ class ClassFitWidget(QWidget):
         p.end()
 
 
+# ── LLM worker threads ──────────────────────────────────────────────
+
+class _LLMTeamWorker(QThread):
+    """Run LLM team suggestion off the main thread."""
+
+    finished = Signal(object)  # list[dict] | None
+
+    def __init__(
+        self,
+        advisor: LLMAdvisor,
+        cats: list[SaveCat],
+        collars: list[CollarDef],
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._advisor = advisor
+        self._cats = cats
+        self._collars = collars
+
+    def run(self) -> None:
+        base_scores: dict[int, list[tuple[CollarDef, float]]] = {}
+        for cat in self._cats:
+            cs = save_cat_to_stats(cat)
+            base_scores[cat.db_key] = [(c, collar_score(c, cs)) for c in self._collars]
+        result = self._advisor.suggest_team_composition(
+            self._cats, self._collars, base_scores,
+        )
+        self.finished.emit(result)
+
+
+class _LLMExplainWorker(QThread):
+    """Run LLM explanation off the main thread."""
+
+    finished = Signal(int, str, str)  # slot_idx, collar_name, explanation
+
+    def __init__(
+        self,
+        advisor: LLMAdvisor,
+        cat: SaveCat,
+        collar: CollarDef,
+        score: float,
+        slot_idx: int,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._advisor = advisor
+        self._cat = cat
+        self._collar = collar
+        self._score = score
+        self._slot_idx = slot_idx
+
+    def run(self) -> None:
+        explanation = self._advisor.explain_recommendation(
+            self._cat, self._collar, self._score,
+        )
+        self.finished.emit(
+            self._slot_idx,
+            self._collar.name,
+            explanation or "",
+        )
+
+
 # ── Main overlay window ──────────────────────────────────────────────
 
 class MewgentOverlay(QMainWindow):
@@ -491,6 +601,14 @@ class MewgentOverlay(QMainWindow):
         self._available_collars: list[CollarDef] = list(COLLARS)
         self._team_slots: list[dict | None] = [None, None, None, None]
         self._stat_icons = _load_stat_icons(14)
+        self._class_icons = _load_class_icons(18)
+
+        self._llm = LLMAdvisor(
+            model=cfg.llm.model,
+            enabled=cfg.llm.enabled,
+        )
+        self._llm_worker: _LLMTeamWorker | None = None
+        self._llm_explain_workers: list[_LLMExplainWorker] = []
 
         self._viable_cats: list[tuple[SaveCat, list[float], int, float]] = []
         self._overview_page: int = 0
@@ -742,6 +860,27 @@ class MewgentOverlay(QMainWindow):
         self._autofill_btn.clicked.connect(self._autofill_team)
         btn_row.addWidget(self._autofill_btn)
 
+        self._ai_team_btn = QPushButton("AI Team")
+        self._ai_team_btn.setFont(QFont(FONT_UI, 8))
+        self._ai_team_btn.setFixedHeight(26)
+        self._ai_team_btn.setStyleSheet(f"""
+            QPushButton {{
+                color: {CLR_TEXT}; background: {CLR_BG_DIM};
+                border: 1px solid {CLR_BORDER}; border-radius: 4px;
+                padding: 2px 10px;
+            }}
+            QPushButton:hover {{ background: rgba(0, 0, 0, 18); }}
+            QPushButton:disabled {{ color: {CLR_DIM}; }}
+        """)
+        self._ai_team_btn.clicked.connect(self._autofill_team_llm)
+        self._ai_team_btn.setVisible(self._llm.available)
+        btn_row.addWidget(self._ai_team_btn)
+
+        self._llm_status_label = QLabel("")
+        self._llm_status_label.setFont(QFont(FONT_UI, 7))
+        self._llm_status_label.setStyleSheet(f"color: {CLR_DIM};")
+        btn_row.addWidget(self._llm_status_label)
+
         clear_btn = QPushButton("Clear")
         clear_btn.setFont(QFont(FONT_UI, 8))
         clear_btn.setFixedHeight(26)
@@ -861,7 +1000,7 @@ class MewgentOverlay(QMainWindow):
         if page == 0:
             widget = StatDistributionWidget(cats, self._stat_icons)
         elif page == 1:
-            widget = ClassFitWidget(cats, self._available_collars)
+            widget = ClassFitWidget(cats, self._available_collars, self._class_icons)
         elif page == 2:
             widget = self._build_top3_page(cats)
         elif page == 3:
@@ -907,6 +1046,17 @@ class MewgentOverlay(QMainWindow):
             row_lay = QHBoxLayout(row_w)
             row_lay.setContentsMargins(0, 0, 0, 0)
             row_lay.setSpacing(8)
+
+            icon_pix = self._class_icons.get(collar.name)
+            if icon_pix:
+                icon_lbl = QLabel()
+                icon_lbl.setPixmap(icon_pix.scaled(
+                    16, 16,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                ))
+                icon_lbl.setFixedSize(16, 16)
+                row_lay.addWidget(icon_lbl)
 
             class_lbl = QLabel(collar.name[:6])
             class_lbl.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
@@ -1054,6 +1204,7 @@ class MewgentOverlay(QMainWindow):
         self._available_collars = unlocked_collars(save_data.unlocked_classes)
         if not self._available_collars:
             self._available_collars = list(COLLARS)
+        self._llm.clear_cache()
 
         self._info_label.setText(
             f"Day {save_data.current_day} \u2502 {len(self._house_cats)} cats"
@@ -1064,7 +1215,12 @@ class MewgentOverlay(QMainWindow):
             combo: QComboBox = sw["combo"]
             combo.blockSignals(True)
             combo.clear()
-            combo.addItems(collar_names)
+            for cname in collar_names:
+                icon_pix = self._class_icons.get(cname)
+                if icon_pix:
+                    combo.addItem(QIcon(icon_pix), cname)
+                else:
+                    combo.addItem(cname)
             combo.blockSignals(False)
 
         self._rebuild_viable_cats()
@@ -1189,6 +1345,7 @@ class MewgentOverlay(QMainWindow):
         self._tb_team_score_label.setText(
             f"Score: {total_score:.1f}" if total_score > 0 else "Score: --"
         )
+        self._request_explanations()
 
     def _refresh_team_scores(self) -> None:
         for slot in self._team_slots:
@@ -1250,6 +1407,98 @@ class MewgentOverlay(QMainWindow):
             used_collar_names.add(collar.name)
 
         self._refresh_team_ui()
+
+    # ── LLM-powered team building ────────────────────────────────────
+
+    def _autofill_team_llm(self) -> None:
+        """Use LLM to suggest a balanced team composition."""
+        if not self._llm.available or not self._house_cats or not self._available_collars:
+            self._autofill_team()
+            return
+
+        available_cats = [
+            c for c in self._house_cats
+            if c.age > 0 or any(
+                getattr(c, f"base_{s}") != 0
+                for s in ("str", "dex", "con", "int", "spd", "cha", "lck")
+            )
+        ]
+        if len(available_cats) < 2:
+            self._autofill_team()
+            return
+
+        self._ai_team_btn.setEnabled(False)
+        self._llm_status_label.setText("AI thinking...")
+
+        self._llm_worker = _LLMTeamWorker(
+            self._llm, available_cats, self._available_collars, self,
+        )
+        self._llm_worker.finished.connect(self._on_llm_team_result)
+        self._llm_worker.start()
+
+    def _on_llm_team_result(self, result: list[dict] | None) -> None:
+        self._ai_team_btn.setEnabled(True)
+        self._llm_status_label.setText("")
+
+        if not result:
+            self._autofill_team()
+            return
+
+        self._team_slots = [None, None, None, None]
+        cat_by_key = {c.db_key: c for c in self._house_cats}
+
+        for slot_idx, entry in enumerate(result[:4]):
+            db_key = entry.get("cat_db_key")
+            collar_name = entry.get("collar_name", "")
+            cat = cat_by_key.get(db_key)
+            collar = collar_by_name(collar_name)
+            if cat is None or collar is None:
+                continue
+            cs = save_cat_to_stats(cat)
+            score = collar_score(collar, cs)
+            self._team_slots[slot_idx] = {
+                "cat": cat,
+                "collar": collar,
+                "score": score,
+            }
+
+        self._refresh_team_ui()
+
+    def _request_explanations(self) -> None:
+        """Request LLM explanations for each filled team slot."""
+        if not self._llm.available:
+            return
+
+        for worker in self._llm_explain_workers:
+            if worker.isRunning():
+                worker.quit()
+        self._llm_explain_workers.clear()
+
+        for i, slot in enumerate(self._team_slots):
+            if slot is None:
+                continue
+            cat = slot["cat"]
+            collar = slot["collar"]
+            score = slot["score"]
+
+            cached = self._llm._explanation_cache.get(f"{cat.db_key}:{collar.name}")
+            if cached:
+                sw = self._team_slot_widgets[i]
+                sw["widget"].setToolTip(cached)
+                continue
+
+            worker = _LLMExplainWorker(
+                self._llm, cat, collar, score, i, self,
+            )
+            worker.finished.connect(self._on_explanation_result)
+            self._llm_explain_workers.append(worker)
+            worker.start()
+
+    def _on_explanation_result(self, slot_idx: int, collar_name: str, explanation: str) -> None:
+        if slot_idx < len(self._team_slot_widgets) and explanation:
+            slot = self._team_slots[slot_idx]
+            if slot is not None and slot["collar"].name == collar_name:
+                self._team_slot_widgets[slot_idx]["widget"].setToolTip(explanation)
 
     # ── Window chrome ────────────────────────────────────────────────
 
