@@ -19,7 +19,9 @@ _WIKI_DIR = Path(__file__).resolve().parents[2] / "wiki_data" / "text"
 _SYSTEM_PROMPT = """\
 You are an expert advisor for the game Mewgenics. You analyze cat stats, \
 abilities, and class mechanics to recommend optimal class assignments and \
-team compositions. Always respond with valid JSON matching the requested schema.\
+team compositions. You also provide breeding advice based on inheritance \
+mechanics, house stats, and inbreeding risks. Always respond with valid \
+JSON matching the requested schema.\
 """
 
 _ROLE_TAGS: dict[str, str] = {
@@ -61,6 +63,17 @@ def _load_wiki_context() -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def _load_breeding_context() -> str:
+    """Load breeding mechanics wiki data for LLM context."""
+    path = _WIKI_DIR / "breeding.md"
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        if len(text) > 15000:
+            text = text[:15000] + "\n[... truncated]"
+        return text
+    return ""
+
+
 def _cat_summary(cat: SaveCat) -> str:
     stats = (
         f"STR={cat.base_str} DEX={cat.base_dex} CON={cat.base_con} "
@@ -87,6 +100,7 @@ class LLMAdvisor:
         self._mock = mock
         self._client: Any = None
         self._wiki_context: str = ""
+        self._breeding_context: str = ""
         self._explanation_cache: dict[str, str] = {}
 
         if not enabled:
@@ -108,6 +122,7 @@ class LLMAdvisor:
             from openai import OpenAI
             self._client = OpenAI(api_key=api_key)
             self._wiki_context = _load_wiki_context()
+            self._breeding_context = _load_breeding_context()
             log.info("LLM advisor ready (model=%s)", model)
         except Exception:
             log.exception("Failed to initialize OpenAI client")
@@ -376,3 +391,173 @@ class LLMAdvisor:
 
     def clear_cache(self) -> None:
         self._explanation_cache.clear()
+
+    # ── Breeding advice ──────────────────────────────────────────────
+
+    def suggest_breeding_pairs(
+        self,
+        cats: list["SaveCat"],
+        collar_name: str,
+        stimulation: int = 0,
+    ) -> list[dict[str, Any]] | None:
+        """Suggest top breeding pairs for a target class using LLM reasoning.
+
+        Returns list of dicts with keys: cat_a_name, cat_a_key, cat_b_name,
+        cat_b_key, reason. Returns None if LLM unavailable.
+        """
+        if not self.available or len(cats) < 2:
+            return None
+
+        if self._mock:
+            return self._mock_breeding_pairs(cats, collar_name)
+
+        cat_summaries = "\n".join(
+            f"  {_cat_summary(c)} | inbreeding={c.breed_coefficient:.2f}"
+            for c in cats[:20]
+        )
+
+        prompt = (
+            f"Suggest the best 3 breeding pairs to produce a strong {collar_name} offspring.\n\n"
+            f"Stimulation level: {stimulation}\n\n"
+            f"Available cats:\n{cat_summaries}\n\n"
+            f"Breeding mechanics:\n{self._breeding_context}\n\n"
+            f"Class info:\n{self._wiki_context}\n\n"
+            f"Rules:\n"
+            f"- Each pair must be different genders (male + female)\n"
+            f"- Prioritize parents whose stats align with {collar_name} class weights\n"
+            f"- Consider ability inheritance -- class abilities are valuable\n"
+            f"- Flag inbreeding risks if both parents have high coefficients\n"
+            f"- Consider Stimulation thresholds for guaranteed inheritance\n\n"
+            f"Respond with ONLY a JSON array of 3 objects, each with:\n"
+            f"  cat_a_name (str), cat_a_key (int), cat_b_name (str), "
+            f"cat_b_key (int), reason (1-2 sentences)\n"
+        )
+
+        raw = self._chat([
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ], temperature=0.3)
+        if not raw:
+            return None
+
+        try:
+            raw = raw.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+            result = json.loads(raw)
+            if not isinstance(result, list) or len(result) == 0:
+                return None
+            return result[:5]
+        except (json.JSONDecodeError, ValueError):
+            log.warning("Failed to parse breeding pairs response")
+            return None
+
+    def _mock_breeding_pairs(
+        self,
+        cats: list["SaveCat"],
+        collar_name: str,
+    ) -> list[dict[str, Any]]:
+        time.sleep(0.6)
+
+        males = [c for c in cats if c.gender == "male"]
+        females = [c for c in cats if c.gender == "female"]
+        if not males or not females:
+            males = cats[:len(cats) // 2]
+            females = cats[len(cats) // 2:]
+
+        rng = random.Random(hash(collar_name))
+        result: list[dict[str, Any]] = []
+        used: set[int] = set()
+
+        for _ in range(min(3, len(males), len(females))):
+            m = rng.choice([c for c in males if c.db_key not in used] or males)
+            f = rng.choice([c for c in females if c.db_key not in used] or females)
+            used.add(m.db_key)
+            used.add(f.db_key)
+            role = _ROLE_TAGS.get(collar_name, "specialist")
+            result.append({
+                "cat_a_name": m.name,
+                "cat_a_key": m.db_key,
+                "cat_b_name": f.name,
+                "cat_b_key": f.db_key,
+                "reason": f"Strong stat complementarity for {role} offspring.",
+            })
+        return result
+
+    def explain_breeding_pair(
+        self,
+        cat_a: "SaveCat",
+        cat_b: "SaveCat",
+        collar_name: str,
+        stimulation: int = 0,
+    ) -> str | None:
+        """Generate a detailed explanation of a breeding pair's potential.
+
+        Returns None if LLM unavailable.
+        """
+        cache_key = f"breed:{cat_a.db_key}:{cat_b.db_key}:{collar_name}:{stimulation}"
+        if cache_key in self._explanation_cache:
+            return self._explanation_cache[cache_key]
+
+        if not self.available:
+            return None
+
+        if self._mock:
+            return self._mock_breeding_explanation(cat_a, cat_b, collar_name)
+
+        prompt = (
+            f"Explain this breeding pair's potential for producing a {collar_name} offspring.\n\n"
+            f"Parent A: {_cat_summary(cat_a)} | inbreeding={cat_a.breed_coefficient:.2f}\n"
+            f"Parent B: {_cat_summary(cat_b)} | inbreeding={cat_b.breed_coefficient:.2f}\n"
+            f"Stimulation: {stimulation}\n\n"
+            f"Breeding mechanics:\n{self._breeding_context}\n\n"
+            f"Analyze:\n"
+            f"1. Stat inheritance outlook for {collar_name}\n"
+            f"2. Ability inheritance potential\n"
+            f"3. Inbreeding risk\n"
+            f"4. Key tips for this Stimulation level\n\n"
+            f"Respond with ONLY 2-4 sentences of explanation, no JSON."
+        )
+
+        raw = self._chat([
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ], temperature=0.4)
+        if raw:
+            explanation = raw.strip()[:400]
+            self._explanation_cache[cache_key] = explanation
+            return explanation
+        return None
+
+    def _mock_breeding_explanation(
+        self,
+        cat_a: "SaveCat",
+        cat_b: "SaveCat",
+        collar_name: str,
+    ) -> str:
+        time.sleep(0.4)
+
+        stat_a = {
+            "STR": cat_a.base_str, "DEX": cat_a.base_dex, "CON": cat_a.base_con,
+            "INT": cat_a.base_int, "SPD": cat_a.base_spd, "CHA": cat_a.base_cha,
+        }
+        stat_b = {
+            "STR": cat_b.base_str, "DEX": cat_b.base_dex, "CON": cat_b.base_con,
+            "INT": cat_b.base_int, "SPD": cat_b.base_spd, "CHA": cat_b.base_cha,
+        }
+        best_a = max(stat_a, key=lambda k: stat_a[k])
+        best_b = max(stat_b, key=lambda k: stat_b[k])
+        role = _ROLE_TAGS.get(collar_name, "specialist")
+
+        explanation = (
+            f"{cat_a.name}'s high {best_a} complements {cat_b.name}'s strong {best_b}, "
+            f"making their offspring promising {role} candidates. "
+        )
+        if cat_a.breed_coefficient > 0.2 or cat_b.breed_coefficient > 0.2:
+            explanation += "Watch for inbreeding risk -- consider mixing in stray bloodlines."
+        else:
+            explanation += "Low inbreeding coefficients mean healthy offspring are likely."
+
+        key = f"breed:{cat_a.db_key}:{cat_b.db_key}:{collar_name}:0"
+        self._explanation_cache[key] = explanation
+        return explanation

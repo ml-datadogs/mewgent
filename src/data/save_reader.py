@@ -54,6 +54,7 @@ class SaveCat:
     abilities: list[str] = field(default_factory=list)
     passives: list[str] = field(default_factory=list)
     status: str = "unknown"  # in_house | historical | dead
+    breed_coefficient: float = 0.0
 
 
 @dataclass
@@ -286,8 +287,15 @@ def _parse_flat_cat(data: bytes, db_key: int) -> SaveCat | None:
     else:
         cat.active_class = initial_class
 
-    # Base stats: after String[1] data + 8-byte f64 breed value
-    stats_offset = s1_offset + 8 + s1_len + 8
+    # Breed coefficient (f64) sits right after String[1] data
+    breed_offset = s1_offset + 8 + s1_len
+    if breed_offset + 8 <= len(data):
+        breed_val = struct.unpack_from("<d", data, breed_offset)[0]
+        if 0.0 <= breed_val <= 1.0:
+            cat.breed_coefficient = breed_val
+
+    # Base stats: after the 8-byte f64 breed value
+    stats_offset = breed_offset + 8
     if stats_offset + 28 <= len(data):
         base_vals = [struct.unpack_from("<i", data, stats_offset + i * 4)[0] for i in range(7)]
         if all(-10 <= v <= 30 for v in base_vals):

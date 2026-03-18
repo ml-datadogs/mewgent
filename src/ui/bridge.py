@@ -1,16 +1,18 @@
 """Bridge between Python backend and the React frontend via QWebChannel.
 
-Exposes roster, team, and LLM data to JavaScript. Receives signals from
-SaveWatcher and re-publishes them as QWebChannel signals.
+Exposes roster, team, breeding, and LLM data to JavaScript. Receives signals
+from SaveWatcher and re-publishes them as QWebChannel signals.
 """
 from __future__ import annotations
 
 import json
 import logging
+from dataclasses import asdict
 from typing import Any
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
+from src.breeding.calculator import BreedingAdvice, analyze_pair, rank_pairs_for_class
 from src.data.collars import (
     COLLARS,
     CollarDef,
@@ -46,6 +48,7 @@ def _cat_dict(cat: SaveCat) -> dict[str, Any]:
         "abilities": cat.abilities,
         "passives": cat.passives,
         "status": cat.status,
+        "breed_coefficient": round(cat.breed_coefficient, 4),
     }
 
 
@@ -104,6 +107,29 @@ class _LLMTeamWorker(QThread):
             self.result_ready.emit(None)
 
 
+class _LLMBreedWorker(QThread):
+    """Run LLM breeding pair suggestion off the main thread."""
+
+    result_ready = Signal(object)
+
+    def __init__(self, advisor, cats, collar_name, stimulation, parent=None):
+        super().__init__(parent)
+        self._advisor = advisor
+        self._cats = cats
+        self._collar_name = collar_name
+        self._stimulation = stimulation
+
+    def run(self):
+        try:
+            result = self._advisor.suggest_breeding_pairs(
+                self._cats, self._collar_name, self._stimulation,
+            )
+            self.result_ready.emit(result)
+        except Exception:
+            log.exception("LLM breed worker failed")
+            self.result_ready.emit(None)
+
+
 class OverlayBridge(QObject):
     """QObject exposed to JavaScript via QWebChannel."""
 
@@ -112,6 +138,7 @@ class OverlayBridge(QObject):
     save_info_updated = Signal(str)
     llm_status_changed = Signal(str)
     collars_updated = Signal(str)
+    breeding_result = Signal(str)
 
     def __init__(self, cfg: AppConfig, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -256,6 +283,49 @@ class OverlayBridge(QObject):
         from PySide6.QtWidgets import QApplication
         QApplication.quit()
 
+    # ── Breeding slots ───────────────────────────────────────────────
+
+    @Slot(int, int, int, result=str)
+    def get_breeding_advice(self, cat_a_key: int, cat_b_key: int, stimulation: int) -> str:
+        """Compute deterministic breeding probabilities for a pair."""
+        cat_a = next((c for c in self._house_cats if c.db_key == cat_a_key), None)
+        cat_b = next((c for c in self._house_cats if c.db_key == cat_b_key), None)
+        if cat_a is None or cat_b is None:
+            return json.dumps(None)
+        advice = analyze_pair(cat_a, cat_b, stimulation)
+        return json.dumps(asdict(advice))
+
+    @Slot(str, int, result=str)
+    def get_breeding_rankings(self, collar_name: str, stimulation: int) -> str:
+        """Rank cat pairs for a target class (deterministic)."""
+        collar = collar_by_name(collar_name)
+        if collar is None or len(self._house_cats) < 2:
+            return json.dumps([])
+        rankings = rank_pairs_for_class(self._house_cats, collar, stimulation)
+        return json.dumps([asdict(r) for r in rankings])
+
+    @Slot(str, int)
+    def suggest_breeding_llm(self, collar_name: str, stimulation: int) -> None:
+        """Request LLM-powered breeding pair suggestions (async)."""
+        if not self._llm.available:
+            rankings = []
+            collar = collar_by_name(collar_name)
+            if collar and len(self._house_cats) >= 2:
+                rankings = rank_pairs_for_class(self._house_cats, collar, stimulation)
+            self.breeding_result.emit(json.dumps({
+                "source": "calculator",
+                "pairs": [asdict(r) for r in rankings],
+            }))
+            return
+
+        self.llm_status_changed.emit("AI analyzing breeding pairs...")
+
+        self._llm_breed_worker = _LLMBreedWorker(
+            self._llm, self._house_cats, collar_name, stimulation, self,
+        )
+        self._llm_breed_worker.result_ready.connect(self._on_llm_breed_result)
+        self._llm_breed_worker.start()
+
     # ── Save data handling (called from overlay shell) ──────────────
 
     def on_save_updated(self, save_data: SaveData) -> None:
@@ -336,3 +406,17 @@ class OverlayBridge(QObject):
             }
 
         self._emit_team()
+
+    @Slot(object)
+    def _on_llm_breed_result(self, result: list[dict] | None) -> None:
+        self.llm_status_changed.emit("")
+        if result:
+            self.breeding_result.emit(json.dumps({
+                "source": "llm",
+                "pairs": result,
+            }))
+        else:
+            self.breeding_result.emit(json.dumps({
+                "source": "llm",
+                "pairs": [],
+            }))

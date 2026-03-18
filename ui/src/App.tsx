@@ -30,7 +30,7 @@ export default function App() {
             <div className="h-px bg-border shrink-0" />
 
             <div className="flex-1 overflow-auto min-h-0">
-              <Overview roster={roster} collars={collars} />
+              <Overview roster={roster} collars={collars} llmAvailable={collars.length > 0} />
             </div>
 
             <div className="h-px bg-border shrink-0" />

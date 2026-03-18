@@ -21,12 +21,16 @@ interface BridgeObject {
   autofill_team: () => void;
   autofill_team_llm: () => void;
   request_close: () => void;
+  get_breeding_advice: (cat_a_key: number, cat_b_key: number, stimulation: number, cb: (json: string) => void) => void;
+  get_breeding_rankings: (collar_name: string, stimulation: number, cb: (json: string) => void) => void;
+  suggest_breeding_llm: (collar_name: string, stimulation: number) => void;
 
   roster_updated: { connect: (fn: (json: string) => void) => void };
   team_updated: { connect: (fn: (json: string) => void) => void };
   save_info_updated: { connect: (fn: (json: string) => void) => void };
   llm_status_changed: { connect: (fn: (status: string) => void) => void };
   collars_updated: { connect: (fn: (json: string) => void) => void };
+  breeding_result: { connect: (fn: (json: string) => void) => void };
 }
 
 let bridge: BridgeObject | null = null;
@@ -119,4 +123,64 @@ export function onLlmStatusChanged(fn: (status: string) => void) {
 
 export function onCollarsUpdated(fn: (collars: CollarDef[]) => void) {
   bridge?.collars_updated.connect((json: string) => fn(JSON.parse(json)));
+}
+
+// ── Breeding ──────────────────────────────────────────────────────
+
+export interface BreedingAdvice {
+  cat_a_name: string;
+  cat_a_key: number;
+  cat_b_name: string;
+  cat_b_key: number;
+  stimulation: number;
+  stat_high_probs: Record<string, number>;
+  first_active_chance: number;
+  second_active_chance: number;
+  passive_chance: number;
+  expected_stats: Record<string, number>;
+  inbreeding_warning: string;
+  parent_a_coeff: number;
+  parent_b_coeff: number;
+  disorder_chance_per_parent: number;
+  tips: string[] | null;
+}
+
+export interface PairRanking {
+  cat_a_key: number;
+  cat_a_name: string;
+  cat_b_key: number;
+  cat_b_name: string;
+  expected_score: number;
+  reason: string;
+}
+
+export interface BreedingResult {
+  source: 'calculator' | 'llm';
+  pairs: PairRanking[] | Array<{ cat_a_name: string; cat_a_key: number; cat_b_name: string; cat_b_key: number; reason: string }>;
+}
+
+export function getBreedingAdvice(catAKey: number, catBKey: number, stimulation: number): Promise<BreedingAdvice | null> {
+  if (!bridge) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    bridge!.get_breeding_advice(catAKey, catBKey, stimulation, (json: string) => {
+      resolve(JSON.parse(json) as BreedingAdvice | null);
+    });
+  });
+}
+
+export function getBreedingRankings(collarName: string, stimulation: number): Promise<PairRanking[]> {
+  if (!bridge) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    bridge!.get_breeding_rankings(collarName, stimulation, (json: string) => {
+      resolve(JSON.parse(json) as PairRanking[]);
+    });
+  });
+}
+
+export function suggestBreedingLlm(collarName: string, stimulation: number) {
+  bridge?.suggest_breeding_llm(collarName, stimulation);
+}
+
+export function onBreedingResult(fn: (result: BreedingResult) => void) {
+  bridge?.breeding_result.connect((json: string) => fn(JSON.parse(json)));
 }

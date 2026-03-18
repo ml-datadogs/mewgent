@@ -5,11 +5,13 @@ import { StatDistribution } from '@/components/StatDistribution';
 import { ClassFit } from '@/components/ClassFit';
 import { TopThreeList } from '@/components/TopThreeList';
 import { AvgRadar } from '@/components/AvgRadar';
+import { BreedingPanel } from '@/components/BreedingPanel';
 import type { RosterEntry, CollarDef } from '@/types';
 
 interface OverviewProps {
   roster: RosterEntry[];
   collars: CollarDef[];
+  llmAvailable: boolean;
 }
 
 const tabVariants = {
@@ -18,7 +20,7 @@ const tabVariants = {
   exit: { opacity: 0, y: -8 },
 };
 
-export function Overview({ roster, collars }: OverviewProps) {
+export function Overview({ roster, collars, llmAvailable }: OverviewProps) {
   const cats = roster.map((r) => r.cat);
 
   return (
@@ -34,6 +36,7 @@ export function Overview({ roster, collars }: OverviewProps) {
             <TabsTrigger value="classes">Classes</TabsTrigger>
             <TabsTrigger value="top3">Top 3</TabsTrigger>
             <TabsTrigger value="avg">Avg</TabsTrigger>
+            <TabsTrigger value="breed">Breed</TabsTrigger>
           </TabsList>
         </div>
 
@@ -98,6 +101,22 @@ export function Overview({ roster, collars }: OverviewProps) {
                 >
                   {cats.length > 0 ? (
                     <AvgRadar cats={cats} />
+                  ) : (
+                    <EmptyState />
+                  )}
+                </motion.div>
+              </TabsContent>
+
+              <TabsContent value="breed" key="breed" forceMount={undefined}>
+                <motion.div
+                  variants={tabVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={{ duration: 0.2 }}
+                >
+                  {cats.length >= 2 ? (
+                    <BreedingPanel cats={cats} collars={collars} llmAvailable={llmAvailable} />
                   ) : (
                     <EmptyState />
                   )}
