@@ -25,7 +25,8 @@ function collarScore(collar: CollarDef, cat: SaveCat): number {
 }
 
 export function TopThreeList({ cats, collars }: TopThreeListProps) {
-  if (cats.length === 0 || collars.length === 0) {
+  const activeCats = cats.filter((c) => !c.retired);
+  if (activeCats.length === 0 || collars.length === 0) {
     return <div className="text-center text-text-dim text-xs py-8 font-serif">No cats</div>;
   }
 
@@ -33,7 +34,7 @@ export function TopThreeList({ cats, collars }: TopThreeListProps) {
     <ScrollArea className="h-[220px]">
       <div className="space-y-2 pr-2">
         {collars.map((collar, collarIdx) => {
-          const scored = cats
+          const scored = activeCats
             .map((cat) => ({ cat, score: collarScore(collar, cat) }))
             .sort((a, b) => b.score - a.score)
             .slice(0, 3);

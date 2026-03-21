@@ -1409,7 +1409,7 @@ class MewgentOverlay(QMainWindow):
             return
 
         self._team_slots = [None, None, None, None]
-        available_cats = [c for c in self._house_cats if c.age > 1]
+        available_cats = [c for c in self._house_cats if c.age > 1 and not c.retired]
         used_cat_keys: set[int] = set()
         used_collar_names: set[str] = set()
 
@@ -1452,7 +1452,7 @@ class MewgentOverlay(QMainWindow):
             self._autofill_team()
             return
 
-        available_cats = [c for c in self._house_cats if c.age > 1]
+        available_cats = [c for c in self._house_cats if c.age > 1 and not c.retired]
         if len(available_cats) < 2:
             self._autofill_team()
             return

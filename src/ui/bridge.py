@@ -50,6 +50,7 @@ def _cat_dict(cat: SaveCat) -> dict[str, Any]:
         "passives": cat.passives,
         "status": cat.status,
         "breed_coefficient": round(cat.breed_coefficient, 4),
+        "retired": cat.retired,
     }
 
 
@@ -208,7 +209,7 @@ class OverlayBridge(QObject):
         collar = collar_by_name(collar_name)
         if cat is None or collar is None:
             return
-        if cat.age <= 1:
+        if cat.age <= 1 or cat.retired:
             return
         cs = save_cat_to_stats(cat)
         score = collar_score(collar, cs)
@@ -237,7 +238,7 @@ class OverlayBridge(QObject):
             return
         self._team_slots = [None, None, None, None]
         self.team_synergy_updated.emit("")
-        available = [c for c in self._house_cats if c.age > 1]
+        available = [c for c in self._house_cats if c.age > 1 and not c.retired]
         used_cats: set[int] = set()
         used_collars: set[str] = set()
 
@@ -275,7 +276,7 @@ class OverlayBridge(QObject):
             return
         self.llm_status_changed.emit("AI thinking...")
 
-        available = [c for c in self._house_cats if c.age > 1]
+        available = [c for c in self._house_cats if c.age > 1 and not c.retired]
         base_scores: dict[int, list[tuple[CollarDef, float]]] = {}
         for cat in available:
             cs = save_cat_to_stats(cat)
@@ -457,7 +458,7 @@ class OverlayBridge(QObject):
             collar = collar_by_name(collar_name)
             if cat is None or collar is None:
                 continue
-            if cat.age <= 1:
+            if cat.age <= 1 or cat.retired:
                 continue
             cs = save_cat_to_stats(cat)
             score = collar_score(collar, cs)

@@ -16,6 +16,7 @@ export interface SaveCat {
   passives: string[];
   status: string;
   breed_coefficient: number;
+  retired: boolean;
 }
 
 export interface SaveData {

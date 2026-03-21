@@ -95,7 +95,7 @@ export default function App() {
 
                   <div className="flex-1 overflow-auto min-h-0">
                     <Overview
-                      roster={roster.filter((r) => r.cat.age > 1)}
+                      roster={roster.filter((r) => r.cat.age > 1 && !r.cat.retired)}
                       collars={collars}
                       llmAvailable={collars.length > 0}
                       hideBreedTab

@@ -190,8 +190,9 @@ class SaveCat:
     base_lck: int = 0
     abilities: list[str] = field(default_factory=list)
     passives: list[str] = field(default_factory=list)
-    status: str = "unknown"  # in_house | adventure | historical | dead
+    status: str = "unknown"  # in_house | adventure | historical | dead | retired
     breed_coefficient: float = 0.0
+    retired: bool = False
 
     unique_id: str = ""
     breed_id: int = 0
@@ -462,6 +463,11 @@ def _parse_flat_cat_inner(data: bytes, db_key: int, current_day: int) -> SaveCat
                 if 0 <= age <= 100:
                     cat.age = age
                     break
+
+    # ── Retired flag (byte at -66 from end, non-zero → retired) ──────
+    retire_pos = len(data) - 66
+    if retire_pos >= 0:
+        cat.retired = data[retire_pos] != 0
 
     return cat
 
