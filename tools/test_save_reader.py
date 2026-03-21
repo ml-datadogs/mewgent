@@ -4,7 +4,7 @@ import os
 import sys
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
 from src.data.save_reader import find_save_files, read_save  # noqa: E402
 

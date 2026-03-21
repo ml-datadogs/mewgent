@@ -21,10 +21,17 @@ tasks:
     cmds:
       - uv run ty check
 
+  lint:ui:
+    desc: Run ESLint on React frontend
+    dir: ui
+    cmds:
+      - npm run lint
+
   check:
     desc: Run all checks (lint + format check + typecheck)
     cmds:
       - task: lint
+      - task: lint:ui
       - task: format:check
       - task: typecheck
 
@@ -33,6 +40,13 @@ tasks:
     cmds:
       - uv run ruff check --fix .
       - uv run ruff format .
+      - task: fix:ui
+
+  fix:ui:
+    desc: Auto-fix ESLint errors in React frontend
+    dir: ui
+    cmds:
+      - npx eslint . --fix
 
   test:
     desc: Run pytest test suite

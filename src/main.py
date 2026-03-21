@@ -104,6 +104,14 @@ def run_gui(cfg: AppConfig) -> None:
 
     bridge = OverlayBridge(cfg)
     overlay = OverlayShell(cfg, bridge, save_watcher=save_watcher)
+
+    if cfg.update.check_url:
+        from src.utils.update_checker import UpdateCheckerThread
+
+        update_checker = UpdateCheckerThread(cfg.update.check_url, parent=bridge)
+        update_checker.update_found.connect(bridge.on_update_found)
+        update_checker.start()
+
     overlay.show()
     sys.exit(app.exec())
 
@@ -141,6 +149,14 @@ def run_dev_ui(cfg: AppConfig) -> None:
 
     bridge = OverlayBridge(cfg)
     overlay = OverlayShell(cfg, bridge, dev_mode=True, save_watcher=save_watcher)
+
+    if cfg.update.check_url:
+        from src.utils.update_checker import UpdateCheckerThread
+
+        update_checker = UpdateCheckerThread(cfg.update.check_url, parent=bridge)
+        update_checker.update_found.connect(bridge.on_update_found)
+        update_checker.start()
+
     overlay.show()
     log.info("Dev UI mode active — showing overlay with mock data")
     sys.exit(app.exec())
@@ -150,7 +166,9 @@ def main() -> None:
     cfg = load_config()
     log_path = str(APP_DATA_DIR / cfg.logging.file) if cfg.logging.file else None
     setup_logging(level=cfg.logging.level, log_file=log_path)
-    log.info("Mewgent v%s starting", "0.1.0")
+    from src.version import __version__
+
+    log.info("Mewgent v%s starting", __version__)
 
     if "--dev-ui" in sys.argv:
         run_dev_ui(cfg)

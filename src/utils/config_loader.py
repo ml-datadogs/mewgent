@@ -50,12 +50,18 @@ class HotkeyConfig:
 
 
 @dataclass
+class UpdateConfig:
+    check_url: str = ""
+
+
+@dataclass
 class AppConfig:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     save_file: SaveFileConfig = field(default_factory=SaveFileConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
+    update: UpdateConfig = field(default_factory=UpdateConfig)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -76,6 +82,7 @@ def load_config() -> AppConfig:
         save_file=SaveFileConfig(**settings_raw.get("save_file", {})),
         llm=LLMConfig(**settings_raw.get("llm", {})),
         hotkey=HotkeyConfig(**settings_raw.get("hotkey", {})),
+        update=UpdateConfig(**settings_raw.get("update", {})),
     )
 
     log.info("Config loaded from %s", CONFIG_DIR)

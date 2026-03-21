@@ -28,6 +28,9 @@ interface BridgeObject {
   get_breeding_rankings: (collar_name: string, stimulation: number, cb: (json: string) => void) => void;
   suggest_breeding_llm: (collar_name: string, stimulation: number) => void;
 
+  get_update_info: (cb: (json: string) => void) => void;
+  open_url: (url: string) => void;
+
   roster_updated: { connect: (fn: (json: string) => void) => void };
   team_updated: { connect: (fn: (json: string) => void) => void };
   team_synergy_updated: { connect: (fn: (synergy: string) => void) => void };
@@ -35,6 +38,7 @@ interface BridgeObject {
   llm_status_changed: { connect: (fn: (status: string) => void) => void };
   collars_updated: { connect: (fn: (json: string) => void) => void };
   breeding_result: { connect: (fn: (json: string) => void) => void };
+  update_available: { connect: (fn: (json: string) => void) => void };
 }
 
 let bridge: BridgeObject | null = null;
@@ -143,6 +147,35 @@ export function onLlmStatusChanged(fn: (status: string) => void) {
 
 export function onCollarsUpdated(fn: (collars: CollarDef[]) => void) {
   bridge?.collars_updated.connect((json: string) => fn(JSON.parse(json)));
+}
+
+// ── Update check ─────────────────────────────────────────────────
+
+export interface UpdateInfo {
+  version: string;
+  url: string;
+  changelog: string;
+}
+
+export function getUpdateInfo(): Promise<UpdateInfo | null> {
+  if (!bridge) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    bridge!.get_update_info((json: string) => {
+      if (!json) {
+        resolve(null);
+        return;
+      }
+      resolve(JSON.parse(json) as UpdateInfo);
+    });
+  });
+}
+
+export function onUpdateAvailable(fn: (info: UpdateInfo) => void) {
+  bridge?.update_available.connect((json: string) => fn(JSON.parse(json)));
+}
+
+export function openUrl(url: string) {
+  bridge?.open_url(url);
 }
 
 // ── Breeding ──────────────────────────────────────────────────────

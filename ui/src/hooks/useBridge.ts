@@ -6,13 +6,16 @@ import {
   getCollars,
   getTeam,
   getSaveInfo,
+  getUpdateInfo,
   onRosterUpdated,
   onTeamUpdated,
   onTeamSynergyUpdated,
   onSaveInfoUpdated,
   onLlmStatusChanged,
   onCollarsUpdated,
+  onUpdateAvailable,
 } from '@/bridge';
+import type { UpdateInfo } from '@/bridge';
 import type { RosterEntry, CollarDef, TeamSlot } from '@/types';
 
 export interface BridgeState {
@@ -23,6 +26,7 @@ export interface BridgeState {
   teamSynergy: string;
   saveInfo: { day: number; cat_count: number; status: string };
   llmStatus: string;
+  updateInfo: UpdateInfo | null;
 }
 
 export function useBridge(): BridgeState {
@@ -33,6 +37,7 @@ export function useBridge(): BridgeState {
   const [teamSynergy, setTeamSynergy] = useState('');
   const [saveInfo, setSaveInfo] = useState({ day: 0, cat_count: 0, status: 'Waiting for save data...' });
   const [llmStatus, setLlmStatus] = useState('');
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -54,14 +59,19 @@ export function useBridge(): BridgeState {
       setTeam(t);
       setSaveInfo(s);
 
+      getUpdateInfo().then((info) => {
+        if (info) setUpdateInfo(info);
+      });
+
       onRosterUpdated(setRoster);
       onTeamUpdated(setTeam);
       onTeamSynergyUpdated(setTeamSynergy);
       onSaveInfoUpdated(setSaveInfo);
       onLlmStatusChanged(setLlmStatus);
       onCollarsUpdated(setCollars);
+      onUpdateAvailable(setUpdateInfo);
     });
   }, []);
 
-  return { connected, roster, collars, team, teamSynergy, saveInfo, llmStatus };
+  return { connected, roster, collars, team, teamSynergy, saveInfo, llmStatus, updateInfo };
 }

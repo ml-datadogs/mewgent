@@ -15,6 +15,7 @@ const CLASS_ICON_MAP: Record<string, string> = {
   Jester: 'Jester_Icon.png',
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function classIconUrl(className: string): string | null {
   const file = CLASS_ICON_MAP[className];
   if (!file) return null;

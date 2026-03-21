@@ -11,7 +11,8 @@ import logging
 from dataclasses import asdict
 from typing import Any
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QObject, QThread, QUrl, Signal, Slot
+from PySide6.QtGui import QDesktopServices
 
 from src.breeding.calculator import analyze_pair, rank_pairs_for_class
 from src.data.collars import (
@@ -146,6 +147,7 @@ class OverlayBridge(QObject):
     llm_status_changed = Signal(str)
     collars_updated = Signal(str)
     breeding_result = Signal(str)
+    update_available = Signal(str)
 
     def __init__(self, cfg: AppConfig, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -157,6 +159,7 @@ class OverlayBridge(QObject):
         self._viable: list[dict[str, Any]] = []
         self._status = "Waiting for save data..."
         self._shell = None
+        self._update_info: str = ""
         self._drag_origin_x: int = 0
         self._drag_origin_y: int = 0
         self._drag_win_x: int = 0
@@ -299,6 +302,20 @@ class OverlayBridge(QObject):
         from PySide6.QtWidgets import QApplication
 
         QApplication.quit()
+
+    @Slot(result=str)
+    def get_update_info(self) -> str:
+        return self._update_info
+
+    @Slot(str)
+    def open_url(self, url: str) -> None:
+        QDesktopServices.openUrl(QUrl(url))
+
+    def on_update_found(self, version: str, url: str, changelog: str) -> None:
+        self._update_info = json.dumps(
+            {"version": version, "url": url, "changelog": changelog}
+        )
+        self.update_available.emit(self._update_info)
 
     # ── Window drag slots (called from JS title bar) ─────────────────
 

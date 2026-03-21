@@ -15,6 +15,7 @@ Binary format based on MewgenicsBreedingManager's proven reverse-engineering:
 
 from __future__ import annotations
 
+import builtins
 import logging
 import math
 import os
@@ -23,6 +24,7 @@ import sqlite3
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypeGuard
 
 import lz4.block
 
@@ -86,7 +88,7 @@ _VISUAL_MUTATION_FIELDS = [
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _valid_str(s: str | None) -> bool:
+def _valid_str(s: str | None) -> TypeGuard[str]:
     return bool(s) and s.strip().lower() not in _JUNK_STRINGS
 
 
@@ -133,7 +135,7 @@ class _BinaryReader:
         self.pos += 8
         return v
 
-    def str(self) -> str | None:
+    def str(self) -> builtins.str | None:
         start = self.pos
         try:
             length = self.u64()
@@ -149,7 +151,7 @@ class _BinaryReader:
             self.pos = start
             return None
 
-    def utf16str(self) -> str:
+    def utf16str(self) -> builtins.str:
         char_count = self.u64()
         byte_len = int(char_count * 2)
         s = self.data[self.pos : self.pos + byte_len].decode(
@@ -392,7 +394,9 @@ def _parse_flat_cat_inner(data: bytes, db_key: int, current_day: int) -> SaveCat
     raw_gender = r.str()
 
     sex_code = data[personality_anchor] if personality_anchor < len(data) else None
-    gender_from_code = {0: "male", 1: "female", 2: "?"}.get(sex_code)
+    gender_from_code = (
+        {0: "male", 1: "female", 2: "?"}.get(sex_code) if sex_code is not None else None
+    )
     if gender_from_code:
         cat.gender = gender_from_code
         cat.gender_source = "sex_code"
@@ -899,7 +903,7 @@ def _dump_save_debug(save: SaveData) -> None:
         by_status.setdefault(c.status, []).append(c)
 
     lines.append(
-        f"  Status breakdown: "
+        "  Status breakdown: "
         + ", ".join(f"{s}={len(cats)}" for s, cats in sorted(by_status.items()))
     )
     lines.append("")

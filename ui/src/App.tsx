@@ -7,6 +7,7 @@ import { TeamPanel } from '@/components/TeamPanel';
 import { Overview } from '@/components/Overview';
 import { BreedingPanel } from '@/components/BreedingPanel';
 import { StatusBar } from '@/components/StatusBar';
+import { UpdateBanner } from '@/components/UpdateBanner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useBridge } from '@/hooks/useBridge';
 
@@ -17,7 +18,7 @@ const pageVariants = {
 };
 
 export default function App() {
-  const { roster, collars, team, teamSynergy, saveInfo, llmStatus } = useBridge();
+  const { roster, collars, team, teamSynergy, saveInfo, llmStatus, updateInfo } = useBridge();
   const [mode, setMode] = useState<'home' | AppMode>('home');
   const cats = roster.map((r) => r.cat);
 
@@ -47,6 +48,8 @@ export default function App() {
             />
 
             <div className="h-px bg-border shrink-0" />
+
+            {updateInfo && <UpdateBanner info={updateInfo} />}
 
             <AnimatePresence mode="wait">
               {mode === 'breeding' && (

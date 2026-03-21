@@ -5,7 +5,7 @@ import sqlite3
 import struct
 import sys
 
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
 import lz4.block  # noqa: E402
 

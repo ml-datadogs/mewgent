@@ -259,7 +259,7 @@ class RadarChartWidget(QWidget):
 
         for frac in (0.25, 0.50, 0.75, 1.0):
             ring = QPolygonF([_point(i, radius * frac) for i in range(n)])
-            ring.append(ring[0])
+            ring.append(ring.at(0))
             pen_color = QColor(CLR_BORDER)
             pen_color.setAlpha(80 if frac < 1.0 else 140)
             p.setPen(QPen(pen_color, 0.5 if frac < 1.0 else 1.0))
@@ -279,7 +279,7 @@ class RadarChartWidget(QWidget):
             for i in range(n):
                 r = (min(self._range_max[i], max_stat) / max_stat) * radius
                 range_poly.append(_point(i, max(r, radius * 0.03)))
-            range_poly.append(range_poly[0])
+            range_poly.append(range_poly.at(0))
             fill = QColor("#B8AD9C")
             fill.setAlpha(40)
             p.setBrush(QBrush(fill))
@@ -290,7 +290,7 @@ class RadarChartWidget(QWidget):
             for i in range(n):
                 r = (min(self._range_min[i], max_stat) / max_stat) * radius
                 min_poly.append(_point(i, max(r, radius * 0.03)))
-            min_poly.append(min_poly[0])
+            min_poly.append(min_poly.at(0))
             erase = QColor(CLR_BG)
             erase.setAlpha(180)
             p.setBrush(QBrush(erase))
@@ -302,7 +302,7 @@ class RadarChartWidget(QWidget):
         for i, val in enumerate(self._values):
             r = (min(val, max_stat) / max_stat) * radius
             data_pts.append(_point(i, max(r, radius * 0.03)))
-        data_pts.append(data_pts[0])
+        data_pts.append(data_pts.at(0))
 
         fill_color = QColor("#5E7A3A")
         fill_color.setAlpha(50)
@@ -1483,6 +1483,8 @@ class MewgentOverlay(QMainWindow):
         for slot_idx, entry in enumerate(result[:4]):
             db_key = entry.get("cat_db_key")
             collar_name = entry.get("collar_name", "")
+            if db_key is None:
+                continue
             cat = cat_by_key.get(db_key)
             collar = collar_by_name(collar_name)
             if cat is None or collar is None:

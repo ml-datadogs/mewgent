@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from src.data.save_reader import SaveCat
     from src.data.stat_parser import CatStats
 
 _STAT_KEYS = ("str", "dex", "con", "int", "spd", "cha", "lck")
@@ -168,7 +169,7 @@ def unlocked_collars(unlocked_classes: list[str]) -> list[CollarDef]:
     return result
 
 
-def save_cat_to_stats(sc: "SaveCat") -> "CatStats":  # noqa: F821
+def save_cat_to_stats(sc: SaveCat) -> CatStats:
     """Bridge a SaveCat (base stats only) into a CatStats for scoring."""
     from src.data.stat_parser import CatStats, StatValue
 

@@ -66,7 +66,7 @@ class WikiScraper:
 
         for img in content.find_all("img"):
             src = img.get("src", "")
-            if not src:
+            if not src or not isinstance(src, str):
                 continue
 
             base_name = _extract_base_filename(src)
@@ -152,7 +152,7 @@ class WikiScraper:
 
 def _int_attr(tag: Tag, attr: str) -> int:
     val = tag.get(attr)
-    if val is None:
+    if val is None or not isinstance(val, str):
         return 0
     try:
         return int(val)

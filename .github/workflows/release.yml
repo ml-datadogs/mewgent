@@ -47,3 +47,27 @@ jobs:
         with:
           files: mewgent-${{ github.ref_name }}-win64.zip
           generate_release_notes: true
+
+  deploy-version:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate version.json
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          mkdir _site
+          cat > _site/version.json <<EOF
+          {
+            "latest": "${VERSION}",
+            "url": "https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}",
+            "changelog": "See release notes at https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          }
+          EOF
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy _site --project-name=mewgent-updates
