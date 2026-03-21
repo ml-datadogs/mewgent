@@ -18,6 +18,7 @@ interface BreedingPanelProps {
   cats: SaveCat[];
   collars: CollarDef[];
   llmAvailable: boolean;
+  bridgeConnected: boolean;
 }
 
 const STAT_LABELS: Record<string, string> = {
@@ -63,7 +64,7 @@ function AdviceDetail({ advice }: { advice: BreedingAdvice }) {
       className="space-y-2"
     >
       <div className="flex items-center justify-between text-[10px]">
-        <span className="font-serif text-text-dim">Inbreeding risk:</span>
+        <span className="text-text-dim">Inbreeding risk:</span>
         <InbreedingBadge level={advice.inbreeding_warning} />
       </div>
 
@@ -123,7 +124,7 @@ function AdviceDetail({ advice }: { advice: BreedingAdvice }) {
       {advice.tips && advice.tips.length > 0 && (
         <div className="space-y-0.5">
           {advice.tips.map((tip, i) => (
-            <div key={i} className="text-[9px] text-text-dim font-serif leading-tight">
+            <div key={i} className="text-[9px] text-text-dim leading-tight">
               &bull; {tip}
             </div>
           ))}
@@ -133,7 +134,7 @@ function AdviceDetail({ advice }: { advice: BreedingAdvice }) {
   );
 }
 
-export function BreedingPanel({ cats, collars, llmAvailable }: BreedingPanelProps) {
+export function BreedingPanel({ cats, collars, llmAvailable, bridgeConnected }: BreedingPanelProps) {
   const [selectedCollar, setSelectedCollar] = useState<string>(collars[0]?.name ?? '');
   const [stimulation, setStimulation] = useState(0);
   const [rankings, setRankings] = useState<PairRanking[]>([]);
@@ -190,7 +191,7 @@ export function BreedingPanel({ cats, collars, llmAvailable }: BreedingPanelProp
 
   if (cats.length < 2 || collars.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[160px] text-text-dim text-xs font-serif">
+      <div className="flex items-center justify-center h-[160px] text-text-dim text-xs">
         Need at least 2 cats to analyze breeding
       </div>
     );
@@ -245,11 +246,22 @@ export function BreedingPanel({ cats, collars, llmAvailable }: BreedingPanelProp
 
           <div className="flex-1" />
 
-          <Button size="sm" onClick={handleSearch} disabled={loading}>
+          <Button
+            size="sm"
+            onClick={handleSearch}
+            disabled={loading || !bridgeConnected}
+            title={!bridgeConnected ? 'Requires Mewgent app' : undefined}
+          >
             Rank Pairs
           </Button>
           {llmAvailable && (
-            <Button size="sm" variant="primary" onClick={handleAiSuggest} disabled={loading}>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={handleAiSuggest}
+              disabled={loading || !bridgeConnected}
+              title={!bridgeConnected ? 'Requires Mewgent app' : undefined}
+            >
               AI Suggest
             </Button>
           )}
@@ -327,13 +339,13 @@ export function BreedingPanel({ cats, collars, llmAvailable }: BreedingPanelProp
         </AnimatePresence>
 
         {rankings.length === 0 && !loading && (
-          <div className="text-center text-text-dim text-[10px] font-serif py-4">
+          <div className="text-center text-text-dim text-[10px] py-4">
             Select a target class and click "Rank Pairs" to find optimal breeding pairs
           </div>
         )}
 
         {loading && (
-          <div className="text-center text-text-dim text-[10px] font-serif py-4">
+          <div className="text-center text-text-dim text-[10px] py-4">
             <span className="animate-pulse-dot inline-block w-1.5 h-1.5 rounded-full bg-accent mr-1" />
             Analyzing...
           </div>

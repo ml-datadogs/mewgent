@@ -67,7 +67,7 @@ export function AiProgressStepper({ active }: { active: boolean }) {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.2 }}
-                  className="text-[10px] text-text-dim font-serif italic truncate"
+                  className="text-[10px] text-text-dim italic truncate"
                 >
                   {label}
                 </motion.span>

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, useMotionValue, animate } from 'framer-motion';
+import { UpdateCheckButton } from '@/components/UpdateCheckButton';
 import { requestClose, beginDrag, updateDrag, endDrag, openUrl } from '@/bridge';
 
 export type AppMode = 'breeding' | 'team';
@@ -8,6 +9,9 @@ interface HomeCarouselProps {
   onSelect: (mode: AppMode) => void;
   day: number;
   catCount: number;
+  connected: boolean;
+  /** Vite-only mock data (no embedded app) */
+  uiPreview?: boolean;
 }
 
 const CARDS: { mode: AppMode; title: string; image: string }[] = [
@@ -18,7 +22,7 @@ const CARDS: { mode: AppMode; title: string; image: string }[] = [
 const DRAG_THRESHOLD = 60;
 const VELOCITY_THRESHOLD = 300;
 
-export function HomeCarousel({ onSelect, day, catCount }: HomeCarouselProps) {
+export function HomeCarousel({ onSelect, day, catCount, connected, uiPreview }: HomeCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
@@ -89,18 +93,22 @@ export function HomeCarousel({ onSelect, day, catCount }: HomeCarouselProps) {
         {CARDS.map((card) => (
           <div
             key={card.mode}
-            className="shrink-0 h-full cursor-pointer select-none relative"
+            className="group shrink-0 h-full cursor-pointer select-none relative overflow-hidden"
             style={{ width: containerRef.current?.offsetWidth ?? '100%' }}
             onClick={() => onSelect(card.mode)}
           >
             <div
-              className="absolute inset-0 bg-cover bg-center"
+              className="absolute inset-0 bg-cover bg-center transition-transform duration-300 ease-out group-hover:scale-105"
               style={{ backgroundImage: `url(${card.image})` }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/50" />
+            <div
+              className="absolute inset-0 transition-opacity duration-300 ease-out opacity-0 group-hover:opacity-100"
+              style={{ background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.45) 100%)' }}
+            />
             <div className="absolute inset-0 flex items-end justify-center pb-6">
               <span
-                className="font-mono text-2xl font-bold tracking-[0.25em] text-white/90 drop-shadow-lg"
+                className="font-mono text-2xl font-bold tracking-[0.25em] text-white/90 drop-shadow-lg transition-all duration-300 ease-out group-hover:-translate-y-1 group-hover:text-white"
                 style={{ textShadow: '0 2px 12px rgba(0,0,0,0.7)' }}
               >
                 {card.title}
@@ -129,7 +137,17 @@ export function HomeCarousel({ onSelect, day, catCount }: HomeCarouselProps) {
             · {catCount} cats
           </span>
         )}
+        {uiPreview && (
+          <span
+            className="text-[9px] font-mono ml-1 px-1.5 py-0.5 rounded bg-white/15"
+            style={{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}
+            title="Data is static mock; run Mewgent for your save"
+          >
+            dev preview
+          </span>
+        )}
         <div className="flex-1" />
+        <UpdateCheckButton connected={connected} variant="overlay" className="mr-1" />
         <button
           onClick={(e) => { e.stopPropagation(); requestClose(); }}
           className="w-5 h-5 rounded-full bg-black/30 hover:bg-black/50

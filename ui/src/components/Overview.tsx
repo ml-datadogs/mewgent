@@ -12,6 +12,7 @@ interface OverviewProps {
   roster: RosterEntry[];
   collars: CollarDef[];
   llmAvailable: boolean;
+  bridgeConnected: boolean;
   hideBreedTab?: boolean;
 }
 
@@ -21,7 +22,13 @@ const tabVariants = {
   exit: { opacity: 0, y: -8 },
 };
 
-export function Overview({ roster, collars, llmAvailable, hideBreedTab }: OverviewProps) {
+export function Overview({
+  roster,
+  collars,
+  llmAvailable,
+  bridgeConnected,
+  hideBreedTab,
+}: OverviewProps) {
   const cats = roster.map((r) => r.cat);
 
   return (
@@ -118,7 +125,12 @@ export function Overview({ roster, collars, llmAvailable, hideBreedTab }: Overvi
                     transition={{ duration: 0.2 }}
                   >
                     {cats.length >= 2 ? (
-                      <BreedingPanel cats={cats} collars={collars} llmAvailable={llmAvailable} />
+                      <BreedingPanel
+                        cats={cats}
+                        collars={collars}
+                        llmAvailable={llmAvailable}
+                        bridgeConnected={bridgeConnected}
+                      />
                     ) : (
                       <EmptyState />
                     )}
@@ -135,7 +147,7 @@ export function Overview({ roster, collars, llmAvailable, hideBreedTab }: Overvi
 
 function EmptyState() {
   return (
-    <div className="flex items-center justify-center h-[160px] text-text-dim text-xs font-serif">
+    <div className="flex items-center justify-center h-[160px] text-text-dim text-xs">
       Save data not loaded yet
     </div>
   );

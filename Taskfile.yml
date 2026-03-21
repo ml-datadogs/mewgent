@@ -66,11 +66,46 @@ tasks:
     cmds:
       - uv run pyinstaller mewgent.spec --noconfirm
 
-  dev:
-    desc: Build UI and launch overlay in dev mode with mock data
+  dev:ui:deps:
+    desc: Install UI npm dependencies when missing or stale
+    internal: true
+    dir: ui
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules/.bin/vite
     cmds:
-      - task: build:ui
+      - npm install
+
+  dev:vite:
+    desc: Run Vite dev server (background; used by task dev)
+    internal: true
+    dir: ui
+    cmds:
+      - npm run dev
+    background: true
+
+  dev:wait-vite:
+    desc: Block until Vite listens on 5173
+    internal: true
+    dir: ui
+    cmds:
+      - npm run wait:vite
+
+  dev:
+    desc: Start Vite (hot reload) and Mewgent overlay (--dev-ui, mock save if no file)
+    deps: [dev:ui:deps]
+    cmds:
+      - task: dev:vite
+      - task: dev:wait-vite
       - uv run python -m src.main --dev-ui
+
+  dev:dist:
+    desc: Build UI to dist/ then run the normal overlay (no Vite)
+    deps: [build:ui]
+    cmds:
+      - uv run python -m src.main
 
   build:
     desc: Full build (UI + executable)

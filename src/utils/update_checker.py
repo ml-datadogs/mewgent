@@ -42,3 +42,76 @@ class UpdateCheckerThread(QThread):
                 log.debug("Up to date (%s)", __version__)
         except Exception:
             log.debug("Update check failed (non-critical)", exc_info=True)
+
+
+class ManualUpdateCheckWorker(QThread):
+    """One-shot fetch of version.json for a user-triggered update check."""
+
+    result = Signal(str)
+
+    def __init__(self, check_url: str, parent=None) -> None:
+        super().__init__(parent)
+        self._url = check_url
+
+    def run(self) -> None:
+        import json
+
+        try:
+            resp = httpx.get(self._url, timeout=10, follow_redirects=True)
+            resp.raise_for_status()
+            data = resp.json()
+            latest = str(data.get("latest", "")).strip()
+            url = str(data.get("url", "")).strip()
+            changelog = str(data.get("changelog", "")).strip()
+            if not latest:
+                self.result.emit(
+                    json.dumps(
+                        {
+                            "state": "error",
+                            "message": "version.json has no latest version",
+                        }
+                    )
+                )
+                return
+            try:
+                if _parse_version(latest) > _parse_version(__version__):
+                    self.result.emit(
+                        json.dumps(
+                            {
+                                "state": "available",
+                                "version": latest,
+                                "url": url,
+                                "changelog": changelog,
+                                "current": __version__,
+                            }
+                        )
+                    )
+                else:
+                    self.result.emit(
+                        json.dumps(
+                            {
+                                "state": "current",
+                                "current": __version__,
+                                "latest": latest,
+                            }
+                        )
+                    )
+            except ValueError:
+                self.result.emit(
+                    json.dumps(
+                        {
+                            "state": "error",
+                            "message": "Invalid version format in version.json",
+                        }
+                    )
+                )
+        except Exception:
+            log.debug("Manual update check failed", exc_info=True)
+            self.result.emit(
+                json.dumps(
+                    {
+                        "state": "error",
+                        "message": "Could not reach update server",
+                    }
+                )
+            )

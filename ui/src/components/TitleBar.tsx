@@ -1,15 +1,18 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
+import { UpdateCheckButton } from '@/components/UpdateCheckButton';
 import { requestClose, beginDrag, updateDrag, endDrag } from '@/bridge';
 
 interface TitleBarProps {
   day: number;
   catCount: number;
+  connected: boolean;
   onBack?: () => void;
+  borderless?: boolean;
 }
 
-export function TitleBar({ day, catCount, onBack }: TitleBarProps) {
+export function TitleBar({ day, catCount, connected, onBack, borderless }: TitleBarProps) {
   const dragging = useRef(false);
 
   const onDocMouseMove = useCallback((e: MouseEvent) => {
@@ -42,7 +45,7 @@ export function TitleBar({ day, catCount, onBack }: TitleBarProps) {
 
   return (
     <div
-      className="flex items-center gap-2 px-1 cursor-grab active:cursor-grabbing select-none"
+      className={`flex items-center gap-2 px-1 cursor-grab active:cursor-grabbing select-none ${borderless ? 'opacity-80' : ''}`}
       onMouseDown={onMouseDown}
     >
       <div className="flex items-center gap-2">
@@ -89,6 +92,8 @@ export function TitleBar({ day, catCount, onBack }: TitleBarProps) {
           </Badge>
         </motion.div>
       )}
+
+      <UpdateCheckButton connected={connected} variant="paper" />
 
       <motion.button
         whileHover={{ scale: 1.15, backgroundColor: 'rgba(0,0,0,0.06)' }}

@@ -1,15 +1,13 @@
 import { motion } from 'framer-motion';
-import { StatRadar } from '@/components/StatRadar';
 import { ClassIcon } from '@/components/ClassIcon';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
-import { removeTeamSlot } from '@/bridge';
-import type { TeamSlot as TeamSlotType, CollarDef } from '@/types';
+import { STAT_ORDER, STAT_LABELS, STAT_COLORS } from '@/types';
+import type { TeamSlot as TeamSlotType, CollarDef, SaveCat, StatKey } from '@/types';
 
 interface TeamSlotProps {
   index: number;
   slot: TeamSlotType | null;
   collars: CollarDef[];
-  onClassChange: (slotIdx: number, collarName: string) => void;
 }
 
 function ScoreDisplay({ value }: { value: number }) {
@@ -21,95 +19,130 @@ function ScoreDisplay({ value }: { value: number }) {
   );
 }
 
-export function TeamSlotCard({ index, slot, collars, onClassChange }: TeamSlotProps) {
+function StatGrid({ cat, collar }: { cat: SaveCat; collar: CollarDef | undefined }) {
+  const weights = collar?.score_weights ?? [];
+  const maxWeight = Math.max(...weights, 0);
+  const threshold = maxWeight * 0.6;
+
+  return (
+    <div className="grid grid-cols-4 gap-x-1.5 gap-y-1">
+      {STAT_ORDER.map((key, i) => {
+        const value = cat[`base_${key}` as keyof SaveCat] as number;
+        const weight = weights[i] ?? 0;
+        const isKey = weight >= threshold && weight > 0;
+        const color = STAT_COLORS[key as StatKey];
+
+        return (
+          <motion.div
+            key={key}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.2, delay: i * 0.03 }}
+            className="flex items-center gap-1 rounded-md px-1 py-0.5"
+            style={{
+              backgroundColor: isKey ? `color-mix(in srgb, ${color} 15%, transparent)` : undefined,
+            }}
+          >
+            <span
+              className="text-[9px] font-mono font-bold leading-none"
+              style={{ color: isKey ? color : 'var(--color-text-dim)', opacity: isKey ? 1 : 0.6 }}
+            >
+              {STAT_LABELS[i]}
+            </span>
+            <span
+              className="text-[11px] font-mono font-bold tabular-nums leading-none"
+              style={{ color: isKey ? color : 'var(--color-text)' }}
+            >
+              {value}
+            </span>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function TeamSlotCard({ index, slot, collars }: TeamSlotProps) {
   const isEmpty = slot === null;
 
   const currentCollar = collars.find((c) => c.name === slot?.collar_name);
-  const borderColor = currentCollar?.color ?? 'transparent';
+  const collarColor = currentCollar?.color ?? 'var(--color-border)';
+
+  if (isEmpty) {
+    return (
+      <motion.div
+        layout
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 0.5 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2, delay: index * 0.04 }}
+        className="rounded-xl border border-border-subtle py-4 px-4 flex items-center justify-center"
+      >
+        <span className="text-xs text-text-dim italic">Slot {index + 1}</span>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95, y: -8 }}
-      transition={{ type: 'spring', stiffness: 350, damping: 28, delay: index * 0.04 }}
-      whileHover={!isEmpty ? { scale: 1.01, boxShadow: '0 4px 16px rgba(0,0,0,0.08)' } : undefined}
-      className="rounded-lg transition-colors duration-200"
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 26, delay: index * 0.08 }}
+      whileHover={{ y: -2, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}
+      className="rounded-xl overflow-hidden transition-shadow duration-200"
       style={{
-        borderLeft: `3px solid ${isEmpty ? 'transparent' : borderColor}`,
-        backgroundColor: isEmpty ? 'transparent' : 'var(--color-highlight)',
-        padding: '4px 8px',
+        border: `1px solid color-mix(in srgb, ${collarColor} 30%, var(--color-border))`,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
       }}
     >
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-xs font-bold text-text-dim w-4 text-right shrink-0">
-          {index + 1}.
-        </span>
+      <div className="h-1" style={{ background: collarColor }} />
 
-        {!isEmpty && slot.cat && (
+      <div
+        className="px-3 pt-2.5 pb-2.5"
+        style={{
+          background: `linear-gradient(180deg, color-mix(in srgb, ${collarColor} 8%, var(--color-card)) 0%, var(--color-card) 100%)`,
+        }}
+      >
+        <motion.div
+          initial={{ opacity: 0, x: -8 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3, delay: index * 0.08 + 0.1 }}
+          className="flex items-start justify-between mb-2"
+        >
+          <div className="min-w-0">
+            <h3 className="text-sm font-serif font-bold text-text truncate leading-tight">
+              {slot.cat.name}
+            </h3>
+            <div className="flex items-center gap-1 mt-0.5">
+              <ClassIcon name={slot.collar_name} size={12} />
+              <span
+                className="text-[10px] font-mono font-semibold"
+                style={{ color: collarColor }}
+              >
+                {slot.collar_name}
+              </span>
+            </div>
+          </div>
+          <ScoreDisplay value={slot.score} />
+        </motion.div>
+
+        <StatGrid cat={slot.cat} collar={currentCollar} />
+
+        {slot.explanation && (
           <motion.div
-            initial={{ scale: 0.5, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.4, delay: index * 0.08 + 0.3 }}
           >
-            <StatRadar cat={slot.cat} size={44} showLabels={false} />
+            <div className="h-px bg-border-subtle mt-2 mb-1.5" />
+            <p className="text-[10px] text-text-dim italic leading-snug">
+              {slot.explanation}
+            </p>
           </motion.div>
         )}
-
-        <div className="flex-1 min-w-0">
-          {isEmpty ? (
-            <span className="text-xs text-text-dim font-serif italic">(empty)</span>
-          ) : (
-            <motion.span
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-xs font-serif font-bold text-text truncate block"
-            >
-              {slot.cat.name}
-            </motion.span>
-          )}
-        </div>
-
-        {!isEmpty && (
-          <>
-            <ClassIcon name={slot.collar_name} size={16} />
-
-            <select
-              value={slot.collar_name}
-              onChange={(e) => onClassChange(index, e.target.value)}
-              className="h-5 px-1.5 text-[10px] font-mono rounded border border-border bg-bg-dim text-text cursor-pointer focus:outline-none focus:ring-1 focus:ring-border"
-            >
-              {collars.map((c) => (
-                <option key={c.name} value={c.name}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-
-            <ScoreDisplay value={slot.score} />
-
-            <motion.button
-              whileHover={{ scale: 1.2, color: 'var(--color-accent)' }}
-              whileTap={{ scale: 0.85 }}
-              onClick={() => removeTeamSlot(index)}
-              className="w-4 h-4 flex items-center justify-center text-[10px] text-text-dim cursor-pointer rounded-full hover:bg-black/5 transition-colors"
-            >
-              ✕
-            </motion.button>
-          </>
-        )}
       </div>
-
-      {!isEmpty && slot.explanation && (
-        <motion.p
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          className="text-[10px] text-text-dim mt-1 ml-6 italic leading-tight"
-        >
-          {slot.explanation}
-        </motion.p>
-      )}
     </motion.div>
   );
 }

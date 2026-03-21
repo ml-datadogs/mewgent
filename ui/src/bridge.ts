@@ -30,6 +30,7 @@ interface BridgeObject {
 
   get_update_info: (cb: (json: string) => void) => void;
   open_url: (url: string) => void;
+  check_for_updates: () => void;
 
   roster_updated: { connect: (fn: (json: string) => void) => void };
   team_updated: { connect: (fn: (json: string) => void) => void };
@@ -39,6 +40,7 @@ interface BridgeObject {
   collars_updated: { connect: (fn: (json: string) => void) => void };
   breeding_result: { connect: (fn: (json: string) => void) => void };
   update_available: { connect: (fn: (json: string) => void) => void };
+  update_check_status: { connect: (fn: (json: string) => void) => void };
 }
 
 let bridge: BridgeObject | null = null;
@@ -172,6 +174,23 @@ export function getUpdateInfo(): Promise<UpdateInfo | null> {
 
 export function onUpdateAvailable(fn: (info: UpdateInfo) => void) {
   bridge?.update_available.connect((json: string) => fn(JSON.parse(json)));
+}
+
+export type UpdateCheckPayload =
+  | { state: 'checking' }
+  | { state: 'disabled' }
+  | { state: 'error'; message: string }
+  | { state: 'current'; current: string; latest: string }
+  | { state: 'available'; version: string; url: string; changelog: string; current?: string };
+
+export function checkForUpdates(): void {
+  bridge?.check_for_updates();
+}
+
+export function onUpdateCheckStatus(fn: (payload: UpdateCheckPayload) => void) {
+  bridge?.update_check_status.connect((json: string) => {
+    fn(JSON.parse(json) as UpdateCheckPayload);
+  });
 }
 
 export function openUrl(url: string) {

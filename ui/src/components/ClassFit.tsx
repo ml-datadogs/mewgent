@@ -109,7 +109,7 @@ function ClassFitTooltip({ active, payload }: FitTooltipProps) {
 
 export function ClassFit({ cats, collars }: ClassFitProps) {
   if (cats.length === 0 || collars.length === 0) {
-    return <div className="text-center text-text-dim text-xs py-8 font-serif">No cats</div>;
+    return <div className="text-center text-text-dim text-xs py-8">No cats</div>;
   }
 
   const data = computeClassFit(cats, collars);

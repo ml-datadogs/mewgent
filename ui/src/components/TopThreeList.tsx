@@ -27,7 +27,7 @@ function collarScore(collar: CollarDef, cat: SaveCat): number {
 export function TopThreeList({ cats, collars }: TopThreeListProps) {
   const activeCats = cats.filter((c) => !c.retired);
   if (activeCats.length === 0 || collars.length === 0) {
-    return <div className="text-center text-text-dim text-xs py-8 font-serif">No cats</div>;
+    return <div className="text-center text-text-dim text-xs py-8">No cats</div>;
   }
 
   return (

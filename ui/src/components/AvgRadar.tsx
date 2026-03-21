@@ -7,7 +7,7 @@ interface AvgRadarProps {
 
 export function AvgRadar({ cats }: AvgRadarProps) {
   if (cats.length === 0) {
-    return <div className="text-center text-text-dim text-xs py-8 font-serif">No cats</div>;
+    return <div className="text-center text-text-dim text-xs py-8">No cats</div>;
   }
 
   const n = cats.length;

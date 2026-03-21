@@ -19,7 +19,7 @@ export function UpdateBanner({ info }: UpdateBannerProps) {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
         transition={{ duration: 0.3 }}
-        className="flex items-center gap-2 rounded-md border border-good/30 bg-good/10 px-3 py-1.5 text-[11px] font-serif"
+        className="flex items-center gap-2 rounded-md border border-good/30 bg-good/10 px-3 py-1.5 text-[11px]"
       >
         <span className="text-good font-semibold">v{info.version} available</span>
         {info.changelog && (

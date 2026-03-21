@@ -33,7 +33,7 @@ export function StatusBar({ status, className }: StatusBarProps) {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.2 }}
-          className="text-[11px] font-serif text-text-dim"
+          className="text-[11px] text-text-dim"
         >
           {status}
         </motion.span>

@@ -148,6 +148,7 @@ class OverlayBridge(QObject):
     collars_updated = Signal(str)
     breeding_result = Signal(str)
     update_available = Signal(str)
+    update_check_status = Signal(str)
 
     def __init__(self, cfg: AppConfig, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -164,6 +165,7 @@ class OverlayBridge(QObject):
         self._drag_origin_y: int = 0
         self._drag_win_x: int = 0
         self._drag_win_y: int = 0
+        self._update_check_worker: QThread | None = None
 
         self._llm = LLMAdvisor(
             model=cfg.llm.model,
@@ -310,6 +312,37 @@ class OverlayBridge(QObject):
     @Slot(str)
     def open_url(self, url: str) -> None:
         QDesktopServices.openUrl(QUrl(url))
+
+    @Slot()
+    def check_for_updates(self) -> None:
+        """Fetch version.json from config update.check_url (runs in a worker thread)."""
+        from src.utils.update_checker import ManualUpdateCheckWorker
+
+        url = (self._cfg.update.check_url or "").strip()
+        if not url:
+            self.update_check_status.emit(json.dumps({"state": "disabled"}))
+            return
+        if self._update_check_worker is not None and self._update_check_worker.isRunning():
+            return
+        self.update_check_status.emit(json.dumps({"state": "checking"}))
+        worker = ManualUpdateCheckWorker(url, self)
+        worker.result.connect(self._on_manual_update_check_result)
+        self._update_check_worker = worker
+        worker.start()
+
+    @Slot(str)
+    def _on_manual_update_check_result(self, payload_json: str) -> None:
+        try:
+            data = json.loads(payload_json)
+        except json.JSONDecodeError:
+            return
+        if data.get("state") == "available":
+            self.on_update_found(
+                str(data.get("version", "")),
+                str(data.get("url", "")),
+                str(data.get("changelog", "")),
+            )
+        self.update_check_status.emit(payload_json)
 
     def on_update_found(self, version: str, url: str, changelog: str) -> None:
         self._update_info = json.dumps(

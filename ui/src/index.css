@@ -26,6 +26,7 @@
   --color-stat-cha: #C17070;
   --color-stat-lck: #5E7A3A;
 
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-serif: "Crimson Pro", "Georgia", serif;
   --font-mono: "JetBrains Mono", "Consolas", "Menlo", monospace;
 }
@@ -42,7 +43,7 @@
     width: 100%;
     overflow: hidden;
     background: transparent;
-    font-family: var(--font-serif);
+    font-family: var(--font-sans);
     color: var(--color-text);
     -webkit-font-smoothing: antialiased;
   }
