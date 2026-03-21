@@ -55,7 +55,7 @@ export default function App() {
         )}
 
         {mode === 'breeding' && (
-          <div className="h-full w-full flex flex-col overflow-hidden">
+          <div className="h-full w-full flex flex-col overflow-hidden bg-paper rounded-xl">
             <div className="flex flex-col gap-1.5 p-3 flex-1 overflow-hidden">
               <TitleBar
                 day={saveInfo.day}
@@ -86,7 +86,7 @@ export default function App() {
                     />
                   ) : (
                     <div className="parchment-empty rounded-lg flex items-center justify-center h-[200px]">
-                      <span className="text-[10px] font-mono font-bold text-text-dim tracking-wider opacity-50">
+                      <span className="text-[11px] font-mono font-bold text-text-dim tracking-wider opacity-50">
                         Need at least 2 cats to analyze breeding
                       </span>
                     </div>
@@ -100,7 +100,7 @@ export default function App() {
         )}
 
         {mode === 'team' && (
-          <div className="h-full w-full flex flex-col overflow-hidden">
+          <div className="h-full w-full flex flex-col overflow-hidden bg-paper rounded-xl">
             <div className="flex flex-col gap-1.5 p-3 flex-1 overflow-hidden">
               <TitleBar
                 day={saveInfo.day}

@@ -52,7 +52,7 @@ function StatGrid({ cat, collar }: { cat: SaveCat; collar: CollarDef | undefined
         }}
       >
         <span
-          className="text-[8px] font-mono font-bold leading-none tracking-wider"
+          className="text-[9px] font-mono font-bold leading-none tracking-wider"
           style={{ color: isKey ? color : 'var(--color-text-dim)', opacity: isKey ? 1 : 0.55 }}
         >
           {STAT_LABELS[i]}
@@ -88,8 +88,8 @@ function AbilityBadges({ abilities, passives }: { abilities: string[]; passives:
           className="sketchy-frame rounded-sm px-1.5 py-0.5 flex items-center gap-1"
           style={{ background: 'rgba(255,255,255,0.3)' }}
         >
-          <span className="text-[8px] font-mono font-bold text-text-dim tracking-wider">ACT</span>
-          <span className="text-[10px] font-mono font-bold text-text">{abilities.length}</span>
+          <span className="text-[9px] font-mono font-bold text-text-dim tracking-wider">ACT</span>
+          <span className="text-[11px] font-mono font-bold text-text">{abilities.length}</span>
         </div>
       )}
       {passives.length > 0 && (
@@ -97,8 +97,8 @@ function AbilityBadges({ abilities, passives }: { abilities: string[]; passives:
           className="sketchy-frame rounded-sm px-1.5 py-0.5 flex items-center gap-1"
           style={{ background: 'rgba(255,255,255,0.3)' }}
         >
-          <span className="text-[8px] font-mono font-bold text-text-dim tracking-wider">PAS</span>
-          <span className="text-[10px] font-mono font-bold text-text">{passives.length}</span>
+          <span className="text-[9px] font-mono font-bold text-text-dim tracking-wider">PAS</span>
+          <span className="text-[11px] font-mono font-bold text-text">{passives.length}</span>
         </div>
       )}
     </div>
@@ -123,7 +123,7 @@ export function TeamSlotCard({ index, slot, collars }: TeamSlotProps) {
         className="parchment-empty rounded-lg py-5 px-4 flex flex-col items-center justify-center gap-1"
         style={{ transform: `rotate(${tilt * 0.5}deg)` }}
       >
-        <span className="text-[10px] font-mono font-bold text-text-dim tracking-wider opacity-50">
+        <span className="text-[11px] font-mono font-bold text-text-dim tracking-wider opacity-50">
           SLOT {index + 1}
         </span>
       </motion.div>
@@ -163,7 +163,7 @@ export function TeamSlotCard({ index, slot, collars }: TeamSlotProps) {
             <h3 className="text-[13px] font-serif font-bold text-text truncate leading-tight">
               {slot.cat.name}
             </h3>
-            <span className="text-[9px] font-mono text-text-dim">
+            <span className="text-[10px] font-mono text-text-dim">
               Lv.{slot.cat.level}
             </span>
           </div>
@@ -210,7 +210,7 @@ export function TeamSlotCard({ index, slot, collars }: TeamSlotProps) {
                 background: 'repeating-linear-gradient(90deg, var(--color-border-subtle) 0px, var(--color-border-subtle) 3px, transparent 3px, transparent 6px)',
               }}
             />
-            <p className="text-[9px] text-text-dim italic leading-snug px-0.5">
+            <p className="text-[10px] text-text-dim italic leading-snug px-0.5">
               {slot.explanation}
             </p>
           </motion.div>

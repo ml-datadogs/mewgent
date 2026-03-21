@@ -76,7 +76,7 @@ export function TopThreeList({ cats, collars }: TopThreeListProps) {
                         {cat.name}
                       </div>
                       <div
-                        className="text-[9px] font-mono font-bold"
+                        className="text-[10px] font-mono font-bold"
                         style={{ color: collar.color }}
                       >
                         {score.toFixed(1)}

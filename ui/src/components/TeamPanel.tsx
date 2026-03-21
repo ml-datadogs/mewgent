@@ -36,7 +36,7 @@ export function TeamPanel({
   const hasTeam = team.some((s) => s !== null);
 
   return (
-    <div className="flex flex-col gap-3 py-1">
+    <div className={`flex flex-col gap-3 py-1${isLoading ? ' h-full' : ''}`}>
       <div className="flex items-center gap-2 px-1">
         <span className="font-mono text-xs font-bold text-accent tracking-wider">
           TEAM
@@ -53,6 +53,7 @@ export function TeamPanel({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25 }}
+            className="flex-1 flex items-center justify-center"
           >
             <AiCircleProgress active={isLoading} />
           </motion.div>

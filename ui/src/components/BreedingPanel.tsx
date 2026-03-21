@@ -91,7 +91,7 @@ function StatInheritanceGrid({ advice }: { advice: BreedingAdvice }) {
         }}
       >
         <span
-          className="text-[8px] font-mono font-bold leading-none tracking-wider"
+          className="text-[9px] font-mono font-bold leading-none tracking-wider"
           style={{ color: isHigh ? color : 'var(--color-text-dim)', opacity: isHigh ? 1 : 0.55 }}
         >
           {STAT_LABELS[i]}
@@ -103,7 +103,7 @@ function StatInheritanceGrid({ advice }: { advice: BreedingAdvice }) {
           >
             {expected.toFixed(1)}
           </span>
-          <span className="text-[8px] font-mono text-text-dim tabular-nums">
+          <span className="text-[9px] font-mono text-text-dim tabular-nums">
             {Math.round(prob * 100)}%
           </span>
         </div>
@@ -138,7 +138,7 @@ function AbilityChances({ advice }: { advice: BreedingAdvice }) {
           className="sketchy-frame rounded-sm px-1.5 py-1 flex-1 text-center"
           style={{ background: item.guaranteed ? 'rgba(94,122,58,0.1)' : 'rgba(255,255,255,0.3)' }}
         >
-          <div className="text-[8px] font-mono font-bold text-text-dim tracking-wider">{item.label}</div>
+          <div className="text-[9px] font-mono font-bold text-text-dim tracking-wider">{item.label}</div>
           <div className={`text-[11px] font-mono font-bold tabular-nums ${item.guaranteed ? 'text-good' : 'text-text'}`}>
             {Math.round(item.value * 100)}%
           </div>
@@ -149,7 +149,7 @@ function AbilityChances({ advice }: { advice: BreedingAdvice }) {
           className="sketchy-frame rounded-sm px-1.5 py-1 flex-1 text-center"
           style={{ background: advice.class_bias_chance >= 1 ? 'rgba(160,128,80,0.1)' : 'rgba(255,255,255,0.3)' }}
         >
-          <div className="text-[8px] font-mono font-bold text-text-dim tracking-wider">Class Bias</div>
+          <div className="text-[9px] font-mono font-bold text-text-dim tracking-wider">Class Bias</div>
           <div className="text-[11px] font-mono font-bold tabular-nums text-accent">
             {Math.round(advice.class_bias_chance * 100)}%
           </div>
@@ -163,19 +163,19 @@ function InbreedingDetail({ advice }: { advice: BreedingAdvice }) {
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <div className="flex items-center gap-1">
-        <span className="text-[9px] text-text-dim">Risk:</span>
+        <span className="text-[10px] text-text-dim">Risk:</span>
         <InbreedingBadge level={advice.inbreeding_warning} />
       </div>
       <div className="flex gap-1.5">
-        <span className="text-[8px] font-mono text-text-dim">
+        <span className="text-[9px] font-mono text-text-dim">
           {advice.cat_a_name.split(' ')[0]}: {(advice.parent_a_coeff * 100).toFixed(1)}%
         </span>
-        <span className="text-[8px] font-mono text-text-dim">
+        <span className="text-[9px] font-mono text-text-dim">
           {advice.cat_b_name.split(' ')[0]}: {(advice.parent_b_coeff * 100).toFixed(1)}%
         </span>
       </div>
       {advice.birth_defect_disorder_chance > 0.02 && (
-        <span className="text-[8px] font-mono text-poor">
+        <span className="text-[9px] font-mono text-poor">
           Defect: {Math.round(advice.birth_defect_disorder_chance * 100)}%
         </span>
       )}
@@ -190,14 +190,14 @@ function DisorderSection({ catA, catB }: { catA: SaveCat; catB: SaveCat }) {
 
   return (
     <div className="space-y-0.5">
-      <div className="text-[8px] font-mono font-bold text-text-dim tracking-wider">DISORDERS (15% inherit each)</div>
+      <div className="text-[9px] font-mono font-bold text-text-dim tracking-wider">DISORDERS (15% inherit each)</div>
       {aDisorders.length > 0 && (
-        <div className="text-[9px] text-text-dim">
+        <div className="text-[10px] text-text-dim">
           {catA.name}: {aDisorders.join(', ')}
         </div>
       )}
       {bDisorders.length > 0 && (
-        <div className="text-[9px] text-text-dim">
+        <div className="text-[10px] text-text-dim">
           {catB.name}: {bDisorders.join(', ')}
         </div>
       )}
@@ -211,12 +211,12 @@ function RoomContext({ advice }: { advice: BreedingAdvice }) {
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-[8px] font-mono font-bold text-text-dim tracking-wider">ROOM</span>
-      <span className="text-[9px] font-mono text-text">{roomDisplayName(ctx.room_name)}</span>
-      <span className="text-[8px] font-mono text-text-dim">Stim={ctx.stimulation}</span>
-      <span className="text-[8px] font-mono text-text-dim">Comfort={ctx.comfort}</span>
+      <span className="text-[9px] font-mono font-bold text-text-dim tracking-wider">ROOM</span>
+      <span className="text-[10px] font-mono text-text">{roomDisplayName(ctx.room_name)}</span>
+      <span className="text-[9px] font-mono text-text-dim">Stim={ctx.stimulation}</span>
+      <span className="text-[9px] font-mono text-text-dim">Comfort={ctx.comfort}</span>
       {advice.comfort_breeding_odds && (
-        <span className="text-[8px] font-mono text-accent">Breed odds: {advice.comfort_breeding_odds}</span>
+        <span className="text-[9px] font-mono text-accent">Breed odds: {advice.comfort_breeding_odds}</span>
       )}
     </div>
   );
@@ -231,16 +231,16 @@ function FamilyInfo({ cat, allCats }: { cat: SaveCat; allCats: SaveCat[] }) {
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       {(parentA || parentB) && (
-        <span className="text-[8px] font-mono text-text-dim">
+        <span className="text-[9px] font-mono text-text-dim">
           Parents: {parentA?.name ?? '?'} + {parentB?.name ?? '?'}
         </span>
       )}
       {childCount > 0 && (
-        <span className="text-[8px] font-mono text-text-dim">
+        <span className="text-[9px] font-mono text-text-dim">
           Children: {childCount}
         </span>
       )}
-      <span className="text-[8px] font-mono text-text-dim">
+      <span className="text-[9px] font-mono text-text-dim">
         Gen {cat.generation}
       </span>
     </div>
@@ -265,7 +265,7 @@ function AdviceDetail({ advice, cats }: { advice: BreedingAdvice; cats: SaveCat[
           <span className="text-[12px] font-serif font-bold text-text">
             {advice.cat_a_name} &times; {advice.cat_b_name}
           </span>
-          <span className="text-[9px] font-mono text-accent">Stim {advice.stimulation}</span>
+          <span className="text-[10px] font-mono text-accent">Stim {advice.stimulation}</span>
         </div>
 
         <StatInheritanceGrid advice={advice} />
@@ -298,7 +298,7 @@ function AdviceDetail({ advice, cats }: { advice: BreedingAdvice; cats: SaveCat[
             />
             <div className="space-y-0.5">
               {advice.tips.map((tip, i) => (
-                <div key={i} className="text-[9px] text-text-dim italic leading-tight px-0.5">
+                <div key={i} className="text-[10px] text-text-dim italic leading-tight px-0.5">
                   &bull; {tip}
                 </div>
               ))}
@@ -330,7 +330,7 @@ function CatBadge({ cat }: { cat: SaveCat }) {
       <span className="text-[10px] font-serif font-bold text-text truncate max-w-[80px]">
         {cat.name}
       </span>
-      <span className="text-[8px] font-mono text-text-dim">G{cat.generation}</span>
+      <span className="text-[9px] font-mono text-text-dim">G{cat.generation}</span>
       {inbredLevel !== 'none' && (
         <InbreedingBadge level={inbredLevel} />
       )}
@@ -394,7 +394,7 @@ function RoomCard({
             {roomDisplayName(roomName)}
           </span>
           <div className="flex items-center gap-1.5">
-            <span className={`text-[8px] font-mono ${comfortWarning ? 'text-poor font-bold' : 'text-text-dim'}`}>
+            <span className={`text-[9px] font-mono ${comfortWarning ? 'text-poor font-bold' : 'text-text-dim'}`}>
               {stats.cat_count} cat{stats.cat_count !== 1 ? 's' : ''}
               {comfortWarning && ' \u26a0'}
             </span>
@@ -405,7 +405,7 @@ function RoomCard({
         <div className="flex gap-1">
           {ROOM_STAT_ICONS.map(({ key, label, color }) => (
             <div key={key} className="text-center flex-1">
-              <div className="text-[7px] font-mono font-bold tracking-wider" style={{ color }}>{label}</div>
+              <div className="text-[9px] font-mono font-bold tracking-wider" style={{ color }}>{label}</div>
               <div className="text-[10px] font-mono font-bold tabular-nums text-text">
                 {stats[key]}
               </div>
@@ -415,7 +415,7 @@ function RoomCard({
 
         {/* Comfort breeding odds */}
         {assignment?.comfort_breeding_odds && (
-          <div className="text-[8px] font-mono text-text-dim">
+          <div className="text-[9px] font-mono text-text-dim">
             Breed odds: <span className="text-accent">{assignment.comfort_breeding_odds}</span>
           </div>
         )}
@@ -428,7 +428,7 @@ function RoomCard({
             ))}
           </div>
         ) : (
-          <div className="text-[9px] font-mono text-text-dim opacity-50 py-1">
+          <div className="text-[10px] font-mono text-text-dim opacity-50 py-1">
             No cats
           </div>
         )}
@@ -453,11 +453,11 @@ function RoomCard({
           >
             <div className="flex items-center justify-between gap-1">
               <div className="flex items-center gap-1 min-w-0">
-                <span className="text-[8px] font-mono font-bold text-good tracking-wider shrink-0">BEST</span>
+                <span className="text-[9px] font-mono font-bold text-good tracking-wider shrink-0">BEST</span>
                 <span className="text-[10px] font-serif font-bold text-text truncate">
                   {cats.find((c) => c.db_key === assignment.best_pair![0])?.name ?? '?'}
                 </span>
-                <span className="text-[8px] text-text-dim">&times;</span>
+                <span className="text-[9px] text-text-dim">&times;</span>
                 <span className="text-[10px] font-serif font-bold text-text truncate">
                   {cats.find((c) => c.db_key === assignment.best_pair![1])?.name ?? '?'}
                 </span>
@@ -465,7 +465,7 @@ function RoomCard({
               <ScoreBadge value={assignment.pair_score} />
             </div>
             {assignment.pair_reason && (
-              <p className="text-[8px] text-text-dim italic leading-snug mt-0.5">
+              <p className="text-[9px] text-text-dim italic leading-snug mt-0.5">
                 {assignment.pair_reason}
               </p>
             )}
@@ -582,7 +582,7 @@ export function BreedingPanel({ cats, roomStats, llmAvailable, bridgeConnected }
             exit={{ opacity: 0 }}
             className="flex items-center gap-2 px-1"
           >
-            <span className="text-[9px] font-mono font-bold text-text-dim tracking-wider">
+            <span className="text-[10px] font-mono font-bold text-text-dim tracking-wider">
               TOTAL BREEDING SCORE
             </span>
             <ScoreBadge value={distribution.total_score} />
@@ -668,20 +668,20 @@ export function BreedingPanel({ cats, roomStats, llmAvailable, bridgeConnected }
                         <span className="text-[11px] font-serif font-bold text-text truncate">
                           {r.cat_a_name}
                         </span>
-                        <span className="text-[9px] text-text-dim">&times;</span>
+                        <span className="text-[10px] text-text-dim">&times;</span>
                         <span className="text-[11px] font-serif font-bold text-text truncate">
                           {r.cat_b_name}
                         </span>
                       </div>
                       {r.same_room && r.room_name && (
-                        <span className="text-[8px] font-mono text-text-dim">
+                        <span className="text-[9px] font-mono text-text-dim">
                           {roomDisplayName(r.room_name)}
                         </span>
                       )}
                     </div>
                     <ScoreBadge value={r.expected_score} />
                   </div>
-                  <p className="text-[8px] text-text-dim italic leading-snug mt-0.5 pl-4">
+                  <p className="text-[9px] text-text-dim italic leading-snug mt-0.5 pl-4">
                     {r.reason}
                   </p>
                 </div>

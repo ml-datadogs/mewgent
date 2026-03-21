@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
+import uuid
 
 from PySide6.QtCore import QSettings, QThread, QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QIcon
 from PySide6.QtWebChannel import QWebChannel
-from PySide6.QtWebEngineCore import QWebEngineProfile
+from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication,
@@ -136,7 +138,7 @@ class OverlayShell(QMainWindow):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMinimumSize(460, 560)
+        self.setMinimumSize(520, 620)
 
         self._logo_icon = QIcon(LOGO_PATH)
         self.setWindowIcon(self._logo_icon)
@@ -175,8 +177,23 @@ class OverlayShell(QMainWindow):
         layout.setSpacing(0)
 
         self._web_view = QWebEngineView()
-        profile = QWebEngineProfile.defaultProfile()
-        profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.NoCache)
+
+        if self._dev_mode:
+            # Fresh profile each launch so Chromium disk cache cannot show a stale bundle.
+            profile = QWebEngineProfile(f"mewgent-dev-{uuid.uuid4().hex[:12]}", self)
+            profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.NoCache)
+            profile.setPersistentCookiesPolicy(
+                QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies
+            )
+            page = QWebEnginePage(profile, self._web_view)
+            self._web_view.setPage(page)
+            log.info(
+                "Dev UI: use `npm run dev` in ui/ (not `npm run preview`) so port 5173 serves sources"
+            )
+        else:
+            profile = QWebEngineProfile.defaultProfile()
+            profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.NoCache)
+
         self._web_view.page().setBackgroundColor(QColor(0, 0, 0, 0))
 
         channel = QWebChannel(self._web_view.page())
@@ -184,7 +201,8 @@ class OverlayShell(QMainWindow):
         self._web_view.page().setWebChannel(channel)
 
         if self._dev_mode:
-            url = QUrl("http://localhost:5173")
+            # Bust document cache; Vite ignores unknown query params on /.
+            url = QUrl(f"http://localhost:5173/?__mewgent_dev={int(time.time() * 1000)}")
             log.info("Dev mode: loading React UI from Vite: %s", url.toString())
         elif UI_INDEX.exists():
             url = QUrl.fromLocalFile(str(UI_INDEX))
@@ -195,6 +213,32 @@ class OverlayShell(QMainWindow):
 
         self._web_view.setUrl(url)
         layout.addWidget(self._web_view)
+
+        self._apply_dpi_zoom()
+
+    # ── DPI-aware zoom ─────────────────────────────────────────────
+
+    def _apply_dpi_zoom(self) -> None:
+        """Scale the web view content when pixels are physically small.
+
+        Uses physicalDotsPerInch / devicePixelRatio to compute effective
+        DPI.  A typical 24" 1080p monitor sits at ~92 DPI; anything above
+        that means pixels are physically smaller and text needs a boost.
+        """
+        screen = self.screen()
+        if screen is None:
+            return
+        dpr = screen.devicePixelRatio()
+        physical_dpi = screen.physicalDotsPerInch()
+        effective_dpi = physical_dpi / dpr
+        zoom = max(1.0, effective_dpi / 92.0)
+        zoom = min(zoom, 1.5)
+        if zoom > 1.02:
+            self._web_view.setZoomFactor(zoom)
+            log.info(
+                "Physical DPI %.0f, DPR %.2f, effective %.0f — zoom %.2f",
+                physical_dpi, dpr, effective_dpi, zoom,
+            )
 
     # ── System tray ──────────────────────────────────────────────────
 
@@ -257,7 +301,7 @@ class OverlayShell(QMainWindow):
         if geo:
             self.restoreGeometry(geo)
         else:
-            self.resize(480, 720)
+            self.resize(540, 800)
             self.move(100, 100)
 
     def closeEvent(self, event) -> None:

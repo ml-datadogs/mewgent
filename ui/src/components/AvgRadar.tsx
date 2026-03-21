@@ -44,7 +44,7 @@ export function AvgRadar({ cats }: AvgRadarProps) {
           return (
             <span
               key={key}
-              className="text-[9px] font-mono font-bold"
+              className="text-[10px] font-mono font-bold"
               style={{ color }}
             >
               {STAT_LABELS[i]} {avgVals[i].toFixed(1)}

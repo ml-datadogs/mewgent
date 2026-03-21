@@ -133,6 +133,11 @@
     inset 0 0 6px rgba(0,0,0,0.06);
 }
 
+/* ── Carousel ──
+   Hover effects removed — QWebEngineView does not reliably fire :hover.
+   Clickability is now communicated via always-visible Framer Motion
+   animations in HomeCarousel.tsx. */
+
 .parchment-empty {
   background:
     repeating-conic-gradient(

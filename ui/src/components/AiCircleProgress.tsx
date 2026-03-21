@@ -12,8 +12,8 @@ const STEPS = [
 const STEP_MS = 2000;
 const DONE_LINGER_MS = 1200;
 
-const RADIUS = 54;
-const STROKE = 5;
+const RADIUS = 68;
+const STROKE = 6;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const SIZE = (RADIUS + STROKE) * 2;
 
@@ -101,14 +101,14 @@ export function AiCircleProgress({ active }: { active: boolean }) {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.2 }}
-                  className="text-[10px] text-text italic text-center px-4 leading-tight"
+                  className="text-[11px] text-text italic text-center px-4 leading-tight"
                 >
                   {label}
                 </motion.span>
               </AnimatePresence>
 
               {phase === 'running' && (
-                <span className="text-[9px] font-mono text-text-dim tabular-nums mt-1">
+                <span className="text-[10px] font-mono text-text-dim tabular-nums mt-1">
                   {step + 1}/{STEPS.length}
                 </span>
               )}

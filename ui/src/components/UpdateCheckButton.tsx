@@ -87,8 +87,8 @@ export function UpdateCheckButton({
         <span
           className={
             variant === 'overlay'
-              ? 'absolute top-full right-0 mt-1 max-w-[200px] text-right text-[9px] font-mono leading-tight px-2 py-1 rounded bg-black/55 text-white/85 backdrop-blur-sm pointer-events-none z-10'
-              : 'absolute top-full right-0 mt-1 max-w-[200px] text-right text-[9px] leading-tight text-text-dim px-1 pointer-events-none z-10'
+              ? 'absolute top-full right-0 mt-1 max-w-[200px] text-right text-[10px] font-mono leading-tight px-2 py-1 rounded bg-black/55 text-white/85 backdrop-blur-sm pointer-events-none z-10'
+              : 'absolute top-full right-0 mt-1 max-w-[200px] text-right text-[10px] leading-tight text-text-dim px-1 pointer-events-none z-10'
           }
         >
           {hint}

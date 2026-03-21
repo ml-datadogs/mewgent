@@ -93,26 +93,38 @@ export function HomeCarousel({ onSelect, day, catCount, connected, uiPreview }: 
         {CARDS.map((card) => (
           <div
             key={card.mode}
-            className="group shrink-0 h-full cursor-pointer select-none relative overflow-hidden"
+            className="shrink-0 h-full cursor-pointer select-none relative overflow-hidden"
             style={{ width: containerRef.current?.offsetWidth ?? '100%' }}
             onClick={() => onSelect(card.mode)}
           >
-            <div
-              className="absolute inset-0 bg-cover bg-center transition-transform duration-300 ease-out group-hover:scale-105"
+            <motion.div
+              className="absolute inset-0 bg-cover bg-center"
               style={{ backgroundImage: `url(${card.image})` }}
+              animate={{ scale: [1, 1.03, 1] }}
+              transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/50" />
             <div
-              className="absolute inset-0 transition-opacity duration-300 ease-out opacity-0 group-hover:opacity-100"
-              style={{ background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.45) 100%)' }}
+              className="absolute inset-0"
+              style={{ background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.35) 100%)' }}
             />
-            <div className="absolute inset-0 flex items-end justify-center pb-6">
+            <div className="absolute inset-0 flex flex-col items-center justify-end pb-6 gap-2">
               <span
-                className="font-mono text-2xl font-bold tracking-[0.25em] text-white/90 drop-shadow-lg transition-all duration-300 ease-out group-hover:-translate-y-1 group-hover:text-white"
+                className="font-mono text-2xl font-bold tracking-[0.25em] text-white/90 drop-shadow-lg"
                 style={{ textShadow: '0 2px 12px rgba(0,0,0,0.7)' }}
               >
                 {card.title}
               </span>
+              <motion.span
+                className="flex items-center gap-1 text-[11px] font-mono text-white/50 tracking-wider"
+                animate={{ opacity: [0.4, 0.8, 0.4] }}
+                transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 3h6v6M14 10l6.1-6.1M9 21H3v-6M10 14l-6.1 6.1" />
+                </svg>
+                click to open
+              </motion.span>
             </div>
           </div>
         ))}
@@ -124,14 +136,14 @@ export function HomeCarousel({ onSelect, day, catCount, connected, uiPreview }: 
         onMouseDown={onDragBarMouseDown}
       >
         <span
-          className="text-[11px] font-mono font-semibold tracking-wide"
+          className="text-[12px] font-mono font-semibold tracking-wide"
           style={{ color: 'rgba(255,255,255,0.7)', textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}
         >
           {day > 0 ? `Day ${day}` : ''}
         </span>
         {catCount > 0 && (
           <span
-            className="text-[11px] font-mono"
+            className="text-[12px] font-mono"
             style={{ color: 'rgba(255,255,255,0.55)', textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}
           >
             · {catCount} cats
@@ -139,7 +151,7 @@ export function HomeCarousel({ onSelect, day, catCount, connected, uiPreview }: 
         )}
         {uiPreview && (
           <span
-            className="text-[9px] font-mono ml-1 px-1.5 py-0.5 rounded bg-white/15"
+            className="text-[10px] font-mono ml-1 px-1.5 py-0.5 rounded bg-white/15"
             style={{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}
             title="Data is static mock; run Mewgent for your save"
           >
