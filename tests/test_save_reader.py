@@ -117,7 +117,7 @@ def _cat_by_key(save_data: SaveData, key: int):
 @pytest.mark.parametrize(
     "db_key",
     list(_CAT_GROUND_TRUTH.keys()),
-    ids=[v["name"] for v in _CAT_GROUND_TRUTH.values()],
+    ids=[str(v["name"]) for v in _CAT_GROUND_TRUTH.values()],
 )
 class TestCatParsing:
     def test_name(self, save_data: SaveData, db_key: int):
