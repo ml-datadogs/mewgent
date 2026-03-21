@@ -4,18 +4,25 @@ import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
 import { STAT_ORDER, STAT_LABELS, STAT_COLORS } from '@/types';
 import type { TeamSlot as TeamSlotType, CollarDef, SaveCat, StatKey } from '@/types';
 
+const CARD_TILTS = [-1.2, 0.8, -0.6, 1.1, -0.9, 0.5];
+
 interface TeamSlotProps {
   index: number;
   slot: TeamSlotType | null;
   collars: CollarDef[];
 }
 
-function ScoreDisplay({ value }: { value: number }) {
+function ScoreBadge({ value }: { value: number }) {
   const animated = useAnimatedNumber(value);
   return (
-    <motion.span className="font-mono text-sm font-bold text-accent tabular-nums">
-      {animated}
-    </motion.span>
+    <div
+      className="sketchy-frame flex items-center justify-center rounded-sm px-1.5 py-0.5"
+      style={{ background: 'rgba(255,255,255,0.35)' }}
+    >
+      <motion.span className="font-mono text-[11px] font-bold text-accent tabular-nums leading-none">
+        {animated}
+      </motion.span>
+    </div>
   );
 }
 
@@ -24,46 +31,83 @@ function StatGrid({ cat, collar }: { cat: SaveCat; collar: CollarDef | undefined
   const maxWeight = Math.max(...weights, 0);
   const threshold = maxWeight * 0.6;
 
-  return (
-    <div className="grid grid-cols-4 gap-x-1.5 gap-y-1">
-      {STAT_ORDER.map((key, i) => {
-        const value = cat[`base_${key}` as keyof SaveCat] as number;
-        const weight = weights[i] ?? 0;
-        const isKey = weight >= threshold && weight > 0;
-        const color = STAT_COLORS[key as StatKey];
+  const left = STAT_ORDER.slice(0, 4);
+  const right = STAT_ORDER.slice(4);
 
-        return (
-          <motion.div
-            key={key}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.2, delay: i * 0.03 }}
-            className="flex items-center gap-1 rounded-md px-1 py-0.5"
-            style={{
-              backgroundColor: isKey ? `color-mix(in srgb, ${color} 15%, transparent)` : undefined,
-            }}
-          >
-            <span
-              className="text-[9px] font-mono font-bold leading-none"
-              style={{ color: isKey ? color : 'var(--color-text-dim)', opacity: isKey ? 1 : 0.6 }}
-            >
-              {STAT_LABELS[i]}
-            </span>
-            <span
-              className="text-[11px] font-mono font-bold tabular-nums leading-none"
-              style={{ color: isKey ? color : 'var(--color-text)' }}
-            >
-              {value}
-            </span>
-          </motion.div>
-        );
-      })}
+  function renderStat(key: string, i: number) {
+    const value = cat[`base_${key}` as keyof SaveCat] as number;
+    const weight = weights[i] ?? 0;
+    const isKey = weight >= threshold && weight > 0;
+    const color = STAT_COLORS[key as StatKey];
+
+    return (
+      <motion.div
+        key={key}
+        initial={{ opacity: 0, x: -4 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.15, delay: i * 0.03 }}
+        className="flex items-center justify-between gap-1 px-1 py-px rounded-sm"
+        style={{
+          backgroundColor: isKey ? `color-mix(in srgb, ${color} 12%, transparent)` : undefined,
+        }}
+      >
+        <span
+          className="text-[8px] font-mono font-bold leading-none tracking-wider"
+          style={{ color: isKey ? color : 'var(--color-text-dim)', opacity: isKey ? 1 : 0.55 }}
+        >
+          {STAT_LABELS[i]}
+        </span>
+        <span
+          className="text-[11px] font-mono font-bold tabular-nums leading-none"
+          style={{ color: isKey ? color : 'var(--color-text)' }}
+        >
+          {value}
+        </span>
+      </motion.div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-x-2 gap-y-0">
+      <div className="flex flex-col gap-0.5">
+        {left.map((key, i) => renderStat(key, i))}
+      </div>
+      <div className="flex flex-col gap-0.5">
+        {right.map((key, i) => renderStat(key, i + 4))}
+      </div>
+    </div>
+  );
+}
+
+function AbilityBadges({ abilities, passives }: { abilities: string[]; passives: string[] }) {
+  if (abilities.length === 0 && passives.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1.5 mt-1.5">
+      {abilities.length > 0 && (
+        <div
+          className="sketchy-frame rounded-sm px-1.5 py-0.5 flex items-center gap-1"
+          style={{ background: 'rgba(255,255,255,0.3)' }}
+        >
+          <span className="text-[8px] font-mono font-bold text-text-dim tracking-wider">ACT</span>
+          <span className="text-[10px] font-mono font-bold text-text">{abilities.length}</span>
+        </div>
+      )}
+      {passives.length > 0 && (
+        <div
+          className="sketchy-frame rounded-sm px-1.5 py-0.5 flex items-center gap-1"
+          style={{ background: 'rgba(255,255,255,0.3)' }}
+        >
+          <span className="text-[8px] font-mono font-bold text-text-dim tracking-wider">PAS</span>
+          <span className="text-[10px] font-mono font-bold text-text">{passives.length}</span>
+        </div>
+      )}
     </div>
   );
 }
 
 export function TeamSlotCard({ index, slot, collars }: TeamSlotProps) {
   const isEmpty = slot === null;
+  const tilt = CARD_TILTS[index % CARD_TILTS.length];
 
   const currentCollar = collars.find((c) => c.name === slot?.collar_name);
   const collarColor = currentCollar?.color ?? 'var(--color-border)';
@@ -73,12 +117,15 @@ export function TeamSlotCard({ index, slot, collars }: TeamSlotProps) {
       <motion.div
         layout
         initial={{ opacity: 0 }}
-        animate={{ opacity: 0.5 }}
+        animate={{ opacity: 0.4 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2, delay: index * 0.04 }}
-        className="rounded-xl border border-border-subtle py-4 px-4 flex items-center justify-center"
+        className="parchment-empty rounded-lg py-5 px-4 flex flex-col items-center justify-center gap-1"
+        style={{ transform: `rotate(${tilt * 0.5}deg)` }}
       >
-        <span className="text-xs text-text-dim italic">Slot {index + 1}</span>
+        <span className="text-[10px] font-mono font-bold text-text-dim tracking-wider opacity-50">
+          SLOT {index + 1}
+        </span>
       </motion.div>
     );
   }
@@ -90,54 +137,80 @@ export function TeamSlotCard({ index, slot, collars }: TeamSlotProps) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ type: 'spring', stiffness: 300, damping: 26, delay: index * 0.08 }}
-      whileHover={{ y: -2, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}
-      className="rounded-xl overflow-hidden transition-shadow duration-200"
-      style={{
-        border: `1px solid color-mix(in srgb, ${collarColor} 30%, var(--color-border))`,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+      whileHover={{
+        y: -3,
+        rotate: 0,
+        boxShadow: '0 8px 20px rgba(0,0,0,0.12)',
+        transition: { duration: 0.2 },
       }}
+      className="parchment-card card-tape sketchy-border rounded-lg overflow-hidden"
+      style={{
+        '--card-bg': `color-mix(in srgb, ${collarColor} 6%, var(--color-card-solid))`,
+        transform: `rotate(${tilt}deg)`,
+        paddingBottom: '4px',
+        borderLeft: `3px solid ${collarColor}`,
+      } as React.CSSProperties}
     >
-      <div className="h-1" style={{ background: collarColor }} />
-
-      <div
-        className="px-3 pt-2.5 pb-2.5"
-        style={{
-          background: `linear-gradient(180deg, color-mix(in srgb, ${collarColor} 8%, var(--color-card)) 0%, var(--color-card) 100%)`,
-        }}
-      >
+      <div className="px-2.5 pt-2.5 pb-2">
+        {/* Header: Name + Level + Score */}
         <motion.div
-          initial={{ opacity: 0, x: -8 }}
+          initial={{ opacity: 0, x: -6 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.3, delay: index * 0.08 + 0.1 }}
-          className="flex items-start justify-between mb-2"
+          transition={{ duration: 0.25, delay: index * 0.08 + 0.1 }}
+          className="flex items-start justify-between mb-1.5"
         >
-          <div className="min-w-0">
-            <h3 className="text-sm font-serif font-bold text-text truncate leading-tight">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[13px] font-serif font-bold text-text truncate leading-tight">
               {slot.cat.name}
             </h3>
-            <div className="flex items-center gap-1 mt-0.5">
-              <ClassIcon name={slot.collar_name} size={12} />
-              <span
-                className="text-[10px] font-mono font-semibold"
-                style={{ color: collarColor }}
-              >
-                {slot.collar_name}
-              </span>
-            </div>
+            <span className="text-[9px] font-mono text-text-dim">
+              Lv.{slot.cat.level}
+            </span>
           </div>
-          <ScoreDisplay value={slot.score} />
+          <ScoreBadge value={slot.score} />
         </motion.div>
 
-        <StatGrid cat={slot.cat} collar={currentCollar} />
+        {/* Framed class icon + stats */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3, delay: index * 0.08 + 0.15 }}
+          className="flex gap-2 items-start"
+        >
+          {/* Class icon in sketchy frame */}
+          <div
+            className="sketchy-frame rounded-sm p-1 shrink-0 flex items-center justify-center"
+            style={{
+              background: `color-mix(in srgb, ${collarColor} 8%, rgba(255,255,255,0.4))`,
+              transform: 'rotate(-1deg)',
+            }}
+          >
+            <ClassIcon name={slot.collar_name} size={26} />
+          </div>
 
+          {/* 2-column stat grid */}
+          <div className="flex-1 min-w-0">
+            <StatGrid cat={slot.cat} collar={currentCollar} />
+          </div>
+        </motion.div>
+
+        {/* Ability badges */}
+        <AbilityBadges abilities={slot.cat.abilities} passives={slot.cat.passives} />
+
+        {/* Explanation */}
         {slot.explanation && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.4, delay: index * 0.08 + 0.3 }}
           >
-            <div className="h-px bg-border-subtle mt-2 mb-1.5" />
-            <p className="text-[10px] text-text-dim italic leading-snug">
+            <div
+              className="h-px mt-2 mb-1.5 mx-1"
+              style={{
+                background: 'repeating-linear-gradient(90deg, var(--color-border-subtle) 0px, var(--color-border-subtle) 3px, transparent 3px, transparent 6px)',
+              }}
+            />
+            <p className="text-[9px] text-text-dim italic leading-snug px-0.5">
               {slot.explanation}
             </p>
           </motion.div>

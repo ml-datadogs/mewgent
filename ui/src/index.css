@@ -71,3 +71,75 @@
 .animate-pulse-dot {
   animation: pulse-dot 2s ease-in-out infinite;
 }
+
+/* ── Game-style parchment card effects ── */
+
+.parchment-card {
+  position: relative;
+  background:
+    repeating-conic-gradient(
+      rgba(0,0,0,0.015) 0% 25%, transparent 0% 50%
+    ) 0 0 / 4px 4px,
+    var(--card-bg, var(--color-card-solid));
+}
+
+.parchment-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 100%, rgba(0,0,0,0.04) 0%, transparent 50%);
+}
+
+.card-tape {
+  position: relative;
+}
+.card-tape::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-1.5deg);
+  width: 36px;
+  height: 12px;
+  background: linear-gradient(
+    180deg,
+    rgba(222, 215, 190, 0.75) 0%,
+    rgba(210, 200, 170, 0.6) 100%
+  );
+  border-radius: 1px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.sketchy-border {
+  box-shadow:
+    1px 1px 0 rgba(0,0,0,0.08),
+    -0.5px 0.5px 0 rgba(0,0,0,0.04),
+    0.5px -0.5px 0 rgba(0,0,0,0.04),
+    inset 0 0 0 1px rgba(0,0,0,0.06);
+  border: 1.5px solid var(--color-border);
+}
+
+.sketchy-frame {
+  border: 1.5px solid var(--color-border);
+  box-shadow:
+    1px 1px 0 rgba(0,0,0,0.1),
+    -0.5px -0.5px 0 rgba(0,0,0,0.05),
+    inset 0 0 6px rgba(0,0,0,0.06);
+}
+
+.parchment-empty {
+  background:
+    repeating-conic-gradient(
+      rgba(0,0,0,0.01) 0% 25%, transparent 0% 50%
+    ) 0 0 / 4px 4px,
+    var(--color-card-solid);
+  border: 1.5px dashed var(--color-border-subtle);
+  box-shadow: inset 0 0 12px rgba(0,0,0,0.03);
+}
+

@@ -63,7 +63,7 @@ export function TeamPanel({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="grid grid-cols-2 gap-2.5"
+            className="grid grid-cols-2 gap-3 pt-2"
           >
             <AnimatePresence mode="popLayout">
               {team.map((slot, i) => (
