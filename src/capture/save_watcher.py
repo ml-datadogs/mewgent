@@ -2,6 +2,7 @@
 
 Emits ``save_updated(SaveData)`` whenever the file is modified.
 """
+
 from __future__ import annotations
 
 import logging
@@ -11,7 +12,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from src.data.save_reader import SaveData, read_save
+from src.data.save_reader import read_save
 
 log = logging.getLogger("mewgent.capture.save_watcher")
 
@@ -60,7 +61,9 @@ class SaveWatcher(QThread):
             self.save_updated.emit(data)
             log.info(
                 "Save updated: %d cats (%d in house), day %d",
-                len(data.cats), len(data.house_cats), data.current_day,
+                len(data.cats),
+                len(data.house_cats),
+                data.current_day,
             )
         except Exception:
             log.exception("Failed to read save file %s", self._path)

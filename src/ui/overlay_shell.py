@@ -4,15 +4,16 @@ Handles only OS-level concerns: window flags, always-on-top, transparency,
 system tray, global hotkey, and drag-to-move. All UI rendering is delegated
 to the React app loaded in the embedded Chromium view.
 """
+
 from __future__ import annotations
 
 import logging
 import sys
-from pathlib import Path
 
 from PySide6.QtCore import QSettings, QThread, QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QIcon
 from PySide6.QtWebChannel import QWebChannel
+from PySide6.QtWebEngineCore import QWebEngineProfile
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication,
@@ -35,8 +36,42 @@ if _IS_WIN:
     import ctypes.wintypes
 
 HOTKEY_ID_TOGGLE = 1
-MOD_ALT = 0x0001
-VK_M = 0x4D
+SW_SHOWNOACTIVATE = 4
+
+# Win32 modifier flags for RegisterHotKey
+_MOD_MAP: dict[str, int] = {
+    "alt": 0x0001,
+    "ctrl": 0x0002,
+    "shift": 0x0004,
+    "win": 0x0008,
+}
+_MOD_NOREPEAT = 0x4000
+
+# Win32 virtual-key codes for A-Z and 0-9
+_VK_MAP: dict[str, int] = {chr(c): c for c in range(0x30, 0x3A)}  # 0-9
+_VK_MAP.update({chr(c): c for c in range(0x41, 0x5B)})  # A-Z
+
+
+def _parse_hotkey(combo: str) -> tuple[int, int, str]:
+    """Parse a string like 'Ctrl+Shift+M' into (modifiers, vk, label)."""
+    parts = [p.strip().lower() for p in combo.split("+")]
+    mods = _MOD_NOREPEAT
+    key_label_parts: list[str] = []
+    vk = 0
+    for part in parts:
+        if part in _MOD_MAP:
+            mods |= _MOD_MAP[part]
+            key_label_parts.append(part.capitalize())
+        else:
+            upper = part.upper()
+            if upper in _VK_MAP:
+                vk = _VK_MAP[upper]
+                key_label_parts.append(upper)
+            else:
+                log.warning("Unknown key in hotkey combo: %r", part)
+    label = "+".join(key_label_parts)
+    return mods, vk, label
+
 
 LOGO_PATH = str(PROJECT_ROOT / "images" / "mewgent-logo.jpg")
 UI_DIST = PROJECT_ROOT / "ui" / "dist"
@@ -44,12 +79,15 @@ UI_INDEX = UI_DIST / "index.html"
 
 
 class HotkeyThread(QThread):
-    """Win32 global hotkey listener for Alt+M toggle."""
+    """Win32 global hotkey listener (configurable combo)."""
 
     triggered = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, modifiers: int, vk: int, label: str, parent=None):
         super().__init__(parent)
+        self._modifiers = modifiers
+        self._vk = vk
+        self._label = label
         self._thread_id: int | None = None
 
     def run(self) -> None:
@@ -57,10 +95,10 @@ class HotkeyThread(QThread):
             return
         user32 = ctypes.windll.user32
         self._thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
-        if not user32.RegisterHotKey(None, HOTKEY_ID_TOGGLE, MOD_ALT, VK_M):
-            log.warning("Failed to register Alt+M hotkey")
+        if not user32.RegisterHotKey(None, HOTKEY_ID_TOGGLE, self._modifiers, self._vk):
+            log.warning("Failed to register %s hotkey", self._label)
             return
-        log.info("Global hotkey registered: Alt+M")
+        log.info("Global hotkey registered: %s", self._label)
         msg = ctypes.wintypes.MSG()
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
             if msg.message == 0x0312 and msg.wParam == HOTKEY_ID_TOGGLE:
@@ -105,7 +143,9 @@ class OverlayShell(QMainWindow):
 
         self._build_webview()
         self._restore_geometry()
+        self._hotkey_label = cfg.hotkey.toggle
         self._setup_tray()
+        self._bridge.set_shell(self)
 
         self._topmost_timer = QTimer(self)
         self._topmost_timer.timeout.connect(self._force_topmost)
@@ -114,7 +154,10 @@ class OverlayShell(QMainWindow):
 
         self._hotkey_thread: HotkeyThread | None = None
         if _IS_WIN and not dev_mode:
-            self._hotkey_thread = HotkeyThread(self)
+            mods, vk, label = _parse_hotkey(cfg.hotkey.toggle)
+            self._hotkey_label = label
+            self._tray.setToolTip(f"Mewgent \u2014 {label} to toggle")
+            self._hotkey_thread = HotkeyThread(mods, vk, label, self)
             self._hotkey_thread.triggered.connect(self._toggle_overlay)
             self._hotkey_thread.start()
 
@@ -132,6 +175,8 @@ class OverlayShell(QMainWindow):
         layout.setSpacing(0)
 
         self._web_view = QWebEngineView()
+        profile = QWebEngineProfile.defaultProfile()
+        profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.NoCache)
         self._web_view.page().setBackgroundColor(QColor(0, 0, 0, 0))
 
         channel = QWebChannel(self._web_view.page())
@@ -152,7 +197,7 @@ class OverlayShell(QMainWindow):
 
     def _setup_tray(self) -> None:
         self._tray = QSystemTrayIcon(self._logo_icon, self)
-        self._tray.setToolTip("Mewgent — Alt+M to toggle")
+        self._tray.setToolTip(f"Mewgent — {self._hotkey_label} to toggle")
 
         menu = QMenu()
         show_action = QAction("Show", self)
@@ -178,7 +223,13 @@ class OverlayShell(QMainWindow):
         try:
             hwnd = int(self.winId())
             ctypes.windll.user32.SetWindowPos(
-                hwnd, -1, 0, 0, 0, 0, 0x0002 | 0x0001 | 0x0010,
+                hwnd,
+                -1,
+                0,
+                0,
+                0,
+                0,
+                0x0002 | 0x0001 | 0x0010,
             )
         except Exception:
             pass
@@ -187,28 +238,17 @@ class OverlayShell(QMainWindow):
         if self.isVisible():
             self.hide()
         else:
-            self.show()
+            if _IS_WIN:
+                hwnd = int(self.winId())
+                ctypes.windll.user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+                self.setVisible(True)
+            else:
+                self.show()
             self._force_topmost()
-
-    # ── Window dragging ──────────────────────────────────────────────
-
-    def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            event.accept()
-
-    def mouseMoveEvent(self, event) -> None:
-        if event.buttons() & Qt.MouseButton.LeftButton and self._drag_pos is not None:
-            self.move(event.globalPosition().toPoint() - self._drag_pos)
-            event.accept()
-
-    def mouseReleaseEvent(self, event) -> None:
-        self._drag_pos = None
 
     # ── Geometry persistence ─────────────────────────────────────────
 
     def _restore_geometry(self) -> None:
-        self._drag_pos = None
         settings = QSettings("Mewgent", "Overlay")
         geo = settings.value("geometry")
         if geo:

@@ -15,6 +15,9 @@ __pycache__/
 # uv
 .python-version
 
+# Environment variables / secrets
+.env
+
 # Application data
 data/*.db
 data/*.db-shm
@@ -22,11 +25,26 @@ data/*.db-wal
 data/*.pid
 data/*.log
 data/*.log.*
-debug_screenshots/*.png
+debug_screenshots/
 *.log
 
 # Wiki scraper output
 wiki_data/
+
+# React build output
+ui/dist/
+node_modules/
+
+# External projects
+MewgenicsBreedingManager/
+
+# Legacy OCR templates
+templates/
+
+# PyInstaller
+dist/
+build/
+*.spec.bak
 
 # OS
 Thumbs.db

@@ -3,17 +3,22 @@
 The .sav file is a SQLite database with LZ4-compressed cat data blobs.
 This module reads the save file and extracts all cat information.
 
-Format discovered through reverse engineering:
+Binary format based on MewgenicsBreedingManager's proven reverse-engineering:
 - SQLite with STRICT tables: cats, files, furniture, properties, winning_teams
 - Cat blobs: 4-byte LE uncompressed size + LZ4 block compressed flat data
-- Flat cat data: header, hash, UTF-16LE name, class, DNA floats, mutations,
-  level, age, gender/voice string, breed float, 7 base stats, abilities, passives
+- Flat cat data parsed sequentially via BinaryReader: breed_id, uid, name,
+  name_tag, parent UIDs, collar, visual mutations, gender, stats,
+  personality traits, abilities, passives, disorders
+- Save-level blobs: house_state (room assignments), adventure_state,
+  house_unlocks, pedigree (parent/child map)
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import os
+import re
 import sqlite3
 import struct
 from dataclasses import dataclass, field
@@ -27,11 +32,143 @@ MEWGENICS_SAVE_DIR = Path(os.environ.get("APPDATA", "")) / "Glaiel Games" / "Mew
 
 STAT_ORDER = ["str", "dex", "con", "int", "spd", "cha", "lck"]
 
-KNOWN_CLASSES = frozenset({
-    "None", "Fighter", "Hunter", "Mage", "Medic", "Tank", "Thief",
-    "Necromancer", "Colorless", "Druid", "Butcher", "Tinkerer",
-    "robotom", "terminator",
-})
+KNOWN_CLASSES = frozenset(
+    {
+        "None",
+        "Fighter",
+        "Hunter",
+        "Mage",
+        "Medic",
+        "Tank",
+        "Thief",
+        "Necromancer",
+        "Colorless",
+        "Druid",
+        "Butcher",
+        "Tinkerer",
+        "robotom",
+        "terminator",
+    }
+)
+
+ROOM_DISPLAY = {
+    "Floor1_Large": "Ground Floor Left",
+    "Floor1_Small": "Ground Floor Right",
+    "Floor2_Large": "Second Floor Right",
+    "Floor2_Small": "Second Floor Left",
+    "Attic": "Attic",
+}
+
+ROOM_KEYS = tuple(ROOM_DISPLAY.keys())
+
+_JUNK_STRINGS = frozenset({"none", "null", "", "defaultmove", "default_move"})
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+_VISUAL_MUTATION_FIELDS = [
+    ("fur", 0),
+    ("body", 3),
+    ("head", 8),
+    ("tail", 13),
+    ("leg_L", 18),
+    ("leg_R", 23),
+    ("arm_L", 28),
+    ("arm_R", 33),
+    ("eye_L", 38),
+    ("eye_R", 43),
+    ("eyebrow_L", 48),
+    ("eyebrow_R", 53),
+    ("ear_L", 58),
+    ("ear_R", 63),
+    ("mouth", 68),
+]
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _valid_str(s: str | None) -> bool:
+    return bool(s) and s.strip().lower() not in _JUNK_STRINGS
+
+
+def _normalize_gender(raw_gender: str | None) -> str:
+    g = (raw_gender or "").strip().lower()
+    if g.startswith("male"):
+        return "male"
+    if g.startswith("female"):
+        return "female"
+    if g == "spidercat":
+        return "?"
+    return "?"
+
+
+# ── BinaryReader ──────────────────────────────────────────────────────────────
+
+
+class _BinaryReader:
+    """Stateful little-endian binary reader for cat blob parsing."""
+
+    __slots__ = ("data", "pos")
+
+    def __init__(self, data: bytes, pos: int = 0) -> None:
+        self.data = data
+        self.pos = pos
+
+    def u32(self) -> int:
+        v = struct.unpack_from("<I", self.data, self.pos)[0]
+        self.pos += 4
+        return v
+
+    def i32(self) -> int:
+        v = struct.unpack_from("<i", self.data, self.pos)[0]
+        self.pos += 4
+        return v
+
+    def u64(self) -> int:
+        lo, hi = struct.unpack_from("<II", self.data, self.pos)
+        self.pos += 8
+        return lo + hi * 4_294_967_296
+
+    def f64(self) -> float:
+        v = struct.unpack_from("<d", self.data, self.pos)[0]
+        self.pos += 8
+        return v
+
+    def str(self) -> str | None:
+        start = self.pos
+        try:
+            length = self.u64()
+            if length > 10_000:
+                self.pos = start
+                return None
+            s = self.data[self.pos : self.pos + int(length)].decode(
+                "utf-8", errors="ignore"
+            )
+            self.pos += int(length)
+            return s
+        except Exception:
+            self.pos = start
+            return None
+
+    def utf16str(self) -> str:
+        char_count = self.u64()
+        byte_len = int(char_count * 2)
+        s = self.data[self.pos : self.pos + byte_len].decode(
+            "utf-16le", errors="ignore"
+        )
+        self.pos += byte_len
+        return s
+
+    def skip(self, n: int) -> None:
+        self.pos += n
+
+    def seek(self, n: int) -> None:
+        self.pos = n
+
+    def remaining(self) -> int:
+        return len(self.data) - self.pos
+
+
+# ── Data classes ──────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -53,8 +190,32 @@ class SaveCat:
     base_lck: int = 0
     abilities: list[str] = field(default_factory=list)
     passives: list[str] = field(default_factory=list)
-    status: str = "unknown"  # in_house | historical | dead
+    status: str = "unknown"  # in_house | adventure | historical | dead
     breed_coefficient: float = 0.0
+
+    unique_id: str = ""
+    breed_id: int = 0
+    name_tag: str = ""
+    collar: str = ""
+    gender_source: str = ""
+    stat_mod: list[int] = field(default_factory=list)
+    stat_sec: list[int] = field(default_factory=list)
+    total_stats: dict[str, int] = field(default_factory=dict)
+    aggression: float | None = None
+    libido: float | None = None
+    inbredness: float | None = None
+    disorders: list[str] = field(default_factory=list)
+    equipment: list[str] = field(default_factory=list)
+    visual_mutation_ids: list[int] = field(default_factory=list)
+    body_parts: dict[str, int] = field(default_factory=dict)
+    room: str = ""
+    on_adventure: bool = False
+    parent_a_key: int = 0
+    parent_b_key: int = 0
+    children_keys: list[int] = field(default_factory=list)
+    lover_keys: list[int] = field(default_factory=list)
+    hater_keys: list[int] = field(default_factory=list)
+    generation: int = 0
 
 
 @dataclass
@@ -72,10 +233,18 @@ class SaveData:
     owner_steamid: str = ""
     save_path: str = ""
 
+    room_assignments: dict[int, str] = field(default_factory=dict)
+    adventure_keys: set[int] = field(default_factory=set)
+    unlocked_rooms: list[str] = field(default_factory=list)
+    pedigree: dict[int, tuple[int | None, int | None]] = field(default_factory=dict)
+
     @property
     def house_cats(self) -> list[SaveCat]:
         """Only cats currently in the player's house."""
         return [c for c in self.cats if c.status == "in_house"]
+
+
+# ── Auto-detect ───────────────────────────────────────────────────────────────
 
 
 def find_save_files() -> list[Path]:
@@ -95,6 +264,9 @@ def find_save_files() -> list[Path]:
     return results
 
 
+# ── Blob decompression ────────────────────────────────────────────────────────
+
+
 def _decompress_blob(blob: bytes) -> bytes | None:
     """Decompress an LZ4-compressed blob from the cats table."""
     if len(blob) < 8:
@@ -109,32 +281,295 @@ def _decompress_blob(blob: bytes) -> bytes | None:
         return None
 
 
-def _find_i64_strings(data: bytes, start: int = 0) -> list[tuple[int, int, str]]:
-    """Find all i64-length-prefixed ASCII strings in flat cat data."""
-    results: list[tuple[int, int, str]] = []
-    p = start
-    while p + 8 < len(data):
-        slen = struct.unpack_from("<q", data, p)[0]
-        if 1 <= slen <= 60 and p + 8 + slen <= len(data):
-            raw = data[p + 8 : p + 8 + slen]
+# ── Cat blob parsing helpers ──────────────────────────────────────────────────
+
+
+def _read_db_key_candidates(
+    raw: bytes,
+    self_key: int,
+    offsets: tuple[int, ...],
+    base_offset: int = 0,
+) -> list[int]:
+    """Read u32 values at given offsets as potential db_key references."""
+    keys: list[int] = []
+    for off in offsets:
+        pos = base_offset + off
+        if pos < 0 or pos + 4 > len(raw):
+            continue
+        try:
+            value = struct.unpack_from("<I", raw, pos)[0]
+        except Exception:
+            continue
+        if value in (0, 0xFFFF_FFFF) or value == self_key:
+            continue
+        if value not in keys:
+            keys.append(value)
+    return keys
+
+
+def _parse_flat_cat(data: bytes, db_key: int, current_day: int = 0) -> SaveCat | None:
+    """Parse a decompressed flat cat record using sequential BinaryReader.
+
+    Layout (from MewgenicsBreedingManager reference parser):
+      @0:   u32 breed_id
+      @4:   u64 unique_id
+      @12:  utf16str name
+            str name_tag -> personality_anchor = reader.pos
+            u64 parent_uid_a, u64 parent_uid_b
+            str collar, u32 skip
+            skip(64)
+            72 x u32 visual mutation table
+            3 x u32 gender_token_fields
+            str raw_gender -> resolve via sex_code at raw[personality_anchor]
+            f64 breed_coefficient
+            7 x u32 base stats, 7 x i32 stat_mod, 7 x i32 stat_sec
+            personality: libido @+32, inbredness @+40, aggression @+64 from anchor
+            lover_keys @+48, hater_keys @+72 from anchor
+            ability run: scan for "DefaultMove" marker
+            age: creation_day u32 near end of blob
+    """
+    if len(data) < 100:
+        return None
+
+    try:
+        return _parse_flat_cat_inner(data, db_key, current_day)
+    except Exception:
+        log.debug("Failed to parse cat #%d via BinaryReader", db_key, exc_info=True)
+        return None
+
+
+def _parse_flat_cat_inner(data: bytes, db_key: int, current_day: int) -> SaveCat | None:
+    r = _BinaryReader(data)
+    cat = SaveCat(db_key=db_key)
+
+    # ── Header ────────────────────────────────────────────────────────
+    cat.breed_id = r.u32()
+
+    uid_int = r.u64()
+    cat.unique_id = hex(uid_int)
+
+    cat.name = r.utf16str()
+    if not cat.name:
+        return None
+
+    cat.name_tag = r.str() or ""
+    personality_anchor = r.pos
+
+    if cat.name_tag in KNOWN_CLASSES:
+        cat.active_class = cat.name_tag
+
+    # Parent UIDs (stored but not used directly -- pedigree blob is authoritative)
+    r.u64()  # parent_uid_a
+    r.u64()  # parent_uid_b
+
+    # ── Collar ────────────────────────────────────────────────────────
+    cat.collar = r.str() or ""
+    r.u32()  # padding
+
+    # ── Visual mutation table ─────────────────────────────────────────
+    r.skip(64)
+    T = [r.u32() for _ in range(72)]
+
+    cat.body_parts = {"texture": T[0], "bodyShape": T[3], "headShape": T[8]}
+
+    mutation_ids: list[int] = []
+    for _slot_key, table_index in _VISUAL_MUTATION_FIELDS:
+        if table_index < len(T):
+            mid = T[table_index]
+            if mid in (0, 0xFFFF_FFFF):
+                continue
+            is_defect = (700 <= mid <= 706) or mid == 0xFFFF_FFFE
+            if not is_defect and mid >= 300:
+                mutation_ids.append(mid)
+    cat.visual_mutation_ids = mutation_ids
+
+    # ── Gender ────────────────────────────────────────────────────────
+    r.u32()  # gender_token_field 1
+    r.u32()  # gender_token_field 2
+    r.u32()  # gender_token_field 3
+
+    raw_gender = r.str()
+
+    sex_code = data[personality_anchor] if personality_anchor < len(data) else None
+    gender_from_code = {0: "male", 1: "female", 2: "?"}.get(sex_code)
+    if gender_from_code:
+        cat.gender = gender_from_code
+        cat.gender_source = "sex_code"
+    else:
+        cat.gender = _normalize_gender(raw_gender)
+        cat.gender_source = "token_fallback"
+
+    # ── Breed coefficient ─────────────────────────────────────────────
+    breed_val = r.f64()
+    if 0.0 <= breed_val <= 1.0:
+        cat.breed_coefficient = breed_val
+
+    # ── Stats ─────────────────────────────────────────────────────────
+    stat_base = [r.u32() for _ in range(7)]
+    cat.base_str = stat_base[0]
+    cat.base_dex = stat_base[1]
+    cat.base_con = stat_base[2]
+    cat.base_int = stat_base[3]
+    cat.base_spd = stat_base[4]
+    cat.base_cha = stat_base[5]
+    cat.base_lck = stat_base[6]
+
+    cat.stat_mod = [r.i32() for _ in range(7)]
+    cat.stat_sec = [r.i32() for _ in range(7)]
+
+    cat.total_stats = {
+        n: stat_base[i] + cat.stat_mod[i] + cat.stat_sec[i]
+        for i, n in enumerate(STAT_ORDER)
+    }
+
+    # ── Personality traits (from personality_anchor offsets) ───────────
+    def _read_personality(offset: int) -> float | None:
+        pos = personality_anchor + offset
+        if pos + 8 > len(data):
+            return None
+        try:
+            v = struct.unpack_from("<d", data, pos)[0]
+        except Exception:
+            return None
+        if not math.isfinite(v) or not (0.0 <= v <= 1.0):
+            return None
+        return float(v)
+
+    cat.libido = _read_personality(32)
+    cat.inbredness = _read_personality(40)
+    cat.aggression = _read_personality(64)
+
+    # ── Relationships ─────────────────────────────────────────────────
+    cat.lover_keys = _read_db_key_candidates(
+        data, db_key, (48,), base_offset=personality_anchor
+    )
+    cat.hater_keys = _read_db_key_candidates(
+        data, db_key, (72,), base_offset=personality_anchor
+    )
+
+    # ── Ability run (scan for "DefaultMove" marker) ───────────────────
+    _parse_abilities(data, r, cat, db_key)
+
+    # ── Age (creation_day near end of blob) ───────────────────────────
+    if current_day > 0:
+        for offset_from_end in (103, 102, 104, 101, 105, 100, 106, 107, 108, 109, 110):
+            pos = len(data) - offset_from_end
+            if pos < 0 or pos + 4 > len(data):
+                continue
+            creation_day = struct.unpack_from("<I", data, pos)[0]
+            if 0 <= creation_day <= current_day:
+                age = current_day - creation_day
+                if 0 <= age <= 100:
+                    cat.age = age
+                    break
+
+    return cat
+
+
+def _parse_abilities(data: bytes, r: _BinaryReader, cat: SaveCat, db_key: int) -> None:
+    """Parse ability run from the cat blob, filling cat.abilities/passives/disorders."""
+    curr = r.pos
+    run_start = -1
+
+    for i in range(curr, min(curr + 600, len(data) - 19)):
+        lo = struct.unpack_from("<I", data, i)[0]
+        hi = struct.unpack_from("<I", data, i + 4)[0]
+        if hi != 0 or not (1 <= lo <= 96):
+            continue
+        try:
+            cand = data[i + 8 : i + 8 + lo].decode("ascii")
+            if cand == "DefaultMove":
+                run_start = i
+                break
+        except Exception:
+            continue
+
+    if run_start != -1:
+        r.seek(run_start)
+        run_items: list[str] = []
+        for _ in range(32):
+            saved = r.pos
+            item = r.str()
+            if item is None or not _IDENT_RE.match(item):
+                r.seek(saved)
+                break
+            run_items.append(item)
+
+        cat.abilities = [x for x in run_items[1:6] if _valid_str(x)]
+
+        passives: list[str] = []
+        for ri in run_items[10:]:
+            if _valid_str(ri):
+                passives.append(ri)
+
+        try:
+            r.u32()  # passive1 tier
+        except Exception:
+            pass
+
+        disorders: list[str] = []
+        for tail_idx in range(3):
             try:
-                s = raw.decode("ascii")
-            except UnicodeDecodeError:
-                p += 1
-                continue
-            if s.isprintable():
-                results.append((p, slen, s))
-                p += 8 + slen
-                continue
-        p += 1
-    return results
+                item = r.str()
+            except Exception:
+                break
+            if item is not None and _IDENT_RE.match(item) and _valid_str(item):
+                if tail_idx == 0:
+                    if item not in passives:
+                        passives.append(item)
+                else:
+                    disorders.append(item)
+            try:
+                r.u32()
+            except Exception:
+                break
+
+        cat.passives = passives
+        cat.disorders = disorders
+        cat.equipment = []
+    else:
+        log.debug("Cat #%d: DefaultMove marker not found, using heuristic", db_key)
+        found = -1
+        for i in range(curr, min(curr + 500, len(data) - 9)):
+            length = struct.unpack_from("<I", data, i)[0]
+            if (
+                0 < length < 64
+                and struct.unpack_from("<I", data, i + 4)[0] == 0
+                and 65 <= data[i + 8] <= 90
+            ):
+                found = i
+                break
+        if found != -1:
+            r.seek(found)
+
+        cat.abilities = [a for a in (r.str() for _ in range(6)) if _valid_str(a)]
+        cat.equipment = [s for s in (r.str() for _ in range(4)) if _valid_str(s)]
+
+        passives: list[str] = []
+        cat.disorders = []
+        first = r.str()
+        if _valid_str(first):
+            passives.append(first)
+        for _ in range(13):
+            if r.remaining() < 12:
+                break
+            flag = r.u32()
+            if flag == 0:
+                break
+            p = r.str()
+            if _valid_str(p):
+                passives.append(p)
+        cat.passives = passives
 
 
-def _parse_house_keys(cursor: sqlite3.Cursor) -> set[int]:
-    """Extract cat keys from the house_state blob in the files table.
+# ── Save-level parsers ────────────────────────────────────────────────────────
 
-    Structure: u32 unknown, u32 count, then records at stride 52 starting
-    at offset 8 where the first u32 of each record is the cat_key.
+
+def _parse_house_info(cursor: sqlite3.Cursor) -> dict[int, str]:
+    """Parse house_state blob into {cat_key: room_name}.
+
+    Variable-length records: u32 cat_key, u32 pad, u32 room_len, u32 pad,
+    room_name (ASCII, room_len bytes), 24 bytes trailing data.
     """
     try:
         row = cursor.execute(
@@ -142,29 +577,132 @@ def _parse_house_keys(cursor: sqlite3.Cursor) -> set[int]:
         ).fetchone()
     except sqlite3.Error:
         log.warning("Failed to read house_state")
-        return set()
+        return {}
     if not row or not row[0]:
-        return set()
+        return {}
 
     blob: bytes = row[0]
     if len(blob) < 8:
-        return set()
+        return {}
 
     count = struct.unpack_from("<I", blob, 4)[0]
-    keys: set[int] = set()
-    for i in range(count):
-        offset = 8 + i * 52
-        if offset + 4 > len(blob):
+    pos = 8
+    result: dict[int, str] = {}
+    for _ in range(count):
+        if pos + 8 > len(blob):
             break
-        val = struct.unpack_from("<I", blob, offset)[0]
-        if 1 <= val <= 10_000:
-            keys.add(val)
+        cat_key = struct.unpack_from("<I", blob, pos)[0]
+        pos += 8
+        if pos + 8 > len(blob):
+            break
+        room_len = struct.unpack_from("<I", blob, pos)[0]
+        pos += 8
+        room_name = ""
+        if room_len > 0 and pos + room_len <= len(blob):
+            room_name = blob[pos : pos + room_len].decode("ascii", errors="ignore")
+            pos += room_len
+        pos += 24
+        if 1 <= cat_key <= 10_000:
+            result[cat_key] = room_name
 
-    log.debug("house_state: %d cat keys", len(keys))
+    log.debug("house_state: %d cat-room entries", len(result))
+    return result
+
+
+def _parse_pedigree(cursor: sqlite3.Cursor) -> dict[int, tuple[int | None, int | None]]:
+    """Parse pedigree blob: 32-byte entries mapping cat -> parent_a, parent_b."""
+    try:
+        row = cursor.execute("SELECT data FROM files WHERE key='pedigree'").fetchone()
+        if not row:
+            return {}
+        blob: bytes = row[0]
+    except Exception:
+        log.warning("Failed to read pedigree blob", exc_info=True)
+        return {}
+
+    NULL = 0xFFFF_FFFF_FFFF_FFFF
+    MAX_KEY = 1_000_000
+    ped_map: dict[int, tuple[int | None, int | None]] = {}
+
+    for pos in range(8, len(blob) - 31, 32):
+        cat_k, pa_k, pb_k, _extra = struct.unpack_from("<QQQQ", blob, pos)
+        if cat_k == 0 or cat_k == NULL or cat_k > MAX_KEY:
+            continue
+        pa = int(pa_k) if pa_k != NULL and 0 < pa_k <= MAX_KEY else None
+        pb = int(pb_k) if pb_k != NULL and 0 < pb_k <= MAX_KEY else None
+        cat_key = int(cat_k)
+
+        existing = ped_map.get(cat_key)
+        if existing is None:
+            ped_map[cat_key] = (pa, pb)
+        elif existing[0] is None or existing[1] is None:
+            if pa is not None and pb is not None:
+                ped_map[cat_key] = (pa, pb)
+
+    log.debug("pedigree: %d entries", len(ped_map))
+    return ped_map
+
+
+def _get_adventure_keys(cursor: sqlite3.Cursor) -> set[int]:
+    """Parse adventure_state blob to find cat keys on adventure."""
+    keys: set[int] = set()
+    try:
+        row = cursor.execute(
+            "SELECT data FROM files WHERE key = 'adventure_state'"
+        ).fetchone()
+        if not row or len(row[0]) < 8:
+            return keys
+        blob: bytes = row[0]
+        count = struct.unpack_from("<I", blob, 4)[0]
+        pos = 8
+        for _ in range(count):
+            if pos + 8 > len(blob):
+                break
+            val = struct.unpack_from("<Q", blob, pos)[0]
+            pos += 8
+            cat_key = (val >> 32) & 0xFFFF_FFFF
+            if cat_key:
+                keys.add(cat_key)
+    except Exception:
+        log.warning("Failed to parse adventure_state blob", exc_info=True)
+    log.debug("adventure_state: %d keys", len(keys))
     return keys
 
 
-def _parse_unlocks(cursor: sqlite3.Cursor) -> tuple[list[str], list[str], list[str]]:
+def _get_unlocked_house_rooms(cursor: sqlite3.Cursor) -> list[str]:
+    """Parse house_unlocks blob to determine which rooms are available."""
+    try:
+        row = cursor.execute(
+            "SELECT data FROM files WHERE key = 'house_unlocks'"
+        ).fetchone()
+    except sqlite3.Error:
+        return []
+    if not row or not row[0]:
+        return []
+
+    tokens = {
+        m.group(0).decode("ascii", errors="ignore")
+        for m in re.finditer(rb"[A-Za-z][A-Za-z0-9_]+", row[0])
+    }
+    unlocked: set[str] = set()
+
+    if tokens & {"Default", "House3", "MediumHouse", "LargeHouse"}:
+        unlocked.add("Floor1_Large")
+    if tokens & {"House3", "MediumHouse_SmallRoom", "LargeHouse"}:
+        unlocked.add("Floor1_Small")
+    if "SmallHouse_Attic" in tokens:
+        unlocked.add("Attic")
+    if tokens & {"MediumHouse", "LargeHouse_Floor2Large"}:
+        unlocked.add("Floor2_Large")
+    if "LargeHouse_Floor2Small" in tokens:
+        unlocked.add("Floor2_Small")
+
+    return [room for room in ROOM_KEYS if room in unlocked]
+
+
+def _parse_unlocks(
+    cursor: sqlite3.Cursor,
+) -> tuple[list[str], list[str], list[str]]:
     """Parse the unlocks blob to extract unlocked classes, abilities, passives.
 
     Structure: u32 num_categories, then for each category:
@@ -172,9 +710,7 @@ def _parse_unlocks(cursor: sqlite3.Cursor) -> tuple[list[str], list[str], list[s
     Category 1 = classes, 2 = active abilities, 3 = passive abilities.
     """
     try:
-        row = cursor.execute(
-            "SELECT data FROM files WHERE key = 'unlocks'"
-        ).fetchone()
+        row = cursor.execute("SELECT data FROM files WHERE key = 'unlocks'").fetchone()
     except sqlite3.Error:
         log.warning("Failed to read unlocks")
         return [], [], []
@@ -216,113 +752,14 @@ def _parse_unlocks(cursor: sqlite3.Cursor) -> tuple[list[str], list[str], list[s
 
     log.debug(
         "unlocks: %d classes, %d abilities, %d passives",
-        len(classes), len(abilities), len(passives),
+        len(classes),
+        len(abilities),
+        len(passives),
     )
     return classes, abilities, passives
 
 
-def _parse_flat_cat(data: bytes, db_key: int) -> SaveCat | None:
-    """Parse a decompressed flat cat record.
-
-    Layout (discovered by reverse engineering against save_file_cat):
-      @0: u32 header
-      @4: 8-byte unique hash
-      @12: u64 name_length (in UTF-16 chars)
-      @20: UTF-16LE name + zero padding
-      ...
-      String[0]: initial class (usually "None")
-      ... binary mutation/genetics data ...
-      @(S2-8): i32 level
-      @(S2-4): i32 age
-      String[1]: gender+voice or active_class name (e.g. "male78", "robotom")
-      After String[1]: f64 breed value, then 7 x i32 base stats
-      String[2]: skin/palette name (e.g. "none")
-      String[3..]: abilities (DefaultMove, BasicMelee, ...), passives, "Colorless"
-    """
-    if len(data) < 100:
-        return None
-
-    cat = SaveCat(db_key=db_key)
-
-    # Name
-    try:
-        name_len = struct.unpack_from("<q", data, 12)[0]
-        if 0 < name_len < 50:
-            cat.name = data[20 : 20 + name_len * 2].decode("utf-16-le", errors="replace").rstrip("\x00")
-    except (struct.error, UnicodeDecodeError):
-        return None
-
-    if not cat.name:
-        return None
-
-    strings = _find_i64_strings(data, 20 + max(0, struct.unpack_from("<q", data, 12)[0]) * 2)
-    if len(strings) < 2:
-        return None
-
-    # String[0] = initial class
-    initial_class = strings[0][2]
-
-    # String[1] = gender+voice or active class
-    s1_offset, s1_len, s1_text = strings[1]
-
-    # Level and age are the two i32 values immediately before String[1]
-    if s1_offset >= 8:
-        cat.level = struct.unpack_from("<i", data, s1_offset - 8)[0]
-        cat.age = struct.unpack_from("<i", data, s1_offset - 4)[0]
-
-    # Sanitize: level/age should be in reasonable range
-    if cat.level < 0 or cat.level > 200:
-        cat.level = 0
-    if cat.age < 0 or cat.age > 200:
-        cat.age = 0
-
-    # Determine gender and active class from s1_text
-    if s1_text.startswith("female"):
-        cat.gender = "female"
-    elif s1_text.startswith("male"):
-        cat.gender = "male"
-
-    if s1_text in KNOWN_CLASSES:
-        cat.active_class = s1_text
-    else:
-        cat.active_class = initial_class
-
-    # Breed coefficient (f64) sits right after String[1] data
-    breed_offset = s1_offset + 8 + s1_len
-    if breed_offset + 8 <= len(data):
-        breed_val = struct.unpack_from("<d", data, breed_offset)[0]
-        if 0.0 <= breed_val <= 1.0:
-            cat.breed_coefficient = breed_val
-
-    # Base stats: after the 8-byte f64 breed value
-    stats_offset = breed_offset + 8
-    if stats_offset + 28 <= len(data):
-        base_vals = [struct.unpack_from("<i", data, stats_offset + i * 4)[0] for i in range(7)]
-        if all(-10 <= v <= 30 for v in base_vals):
-            cat.base_str = base_vals[0]
-            cat.base_dex = base_vals[1]
-            cat.base_con = base_vals[2]
-            cat.base_int = base_vals[3]
-            cat.base_spd = base_vals[4]
-            cat.base_cha = base_vals[5]
-            cat.base_lck = base_vals[6]
-
-    # Abilities and passives from remaining strings
-    for _, _, s in strings[3:]:
-        if s in ("None", "Colorless", "none"):
-            continue
-        if s.startswith("Basic") or s == "DefaultMove":
-            continue
-        cat.abilities.append(s)
-
-    # Find the actual class from the end of the string list
-    # The very last meaningful string (not "Colorless"/"None") might be the class
-    for _, _, s in reversed(strings):
-        if s in KNOWN_CLASSES and s not in ("None", "Colorless"):
-            cat.active_class = s
-            break
-
-    return cat
+# ── Main entry point ──────────────────────────────────────────────────────────
 
 
 def read_save(path: str | Path) -> SaveData:
@@ -340,7 +777,7 @@ def read_save(path: str | Path) -> SaveData:
     try:
         cursor = conn.cursor()
 
-        # Properties
+        # ── Properties ────────────────────────────────────────────────
         try:
             for key, val in cursor.execute("SELECT key, data FROM properties"):
                 if key == "current_day" and isinstance(val, int):
@@ -354,31 +791,47 @@ def read_save(path: str | Path) -> SaveData:
         except sqlite3.Error:
             log.warning("Failed to read properties table")
 
-        # House state and unlocks
-        house_keys = _parse_house_keys(cursor)
-        result.house_cat_keys = house_keys
+        # ── Save-level blobs ──────────────────────────────────────────
+        room_assignments = _parse_house_info(cursor)
+        result.room_assignments = room_assignments
+        result.house_cat_keys = set(room_assignments.keys())
+
+        adventure_keys = _get_adventure_keys(cursor)
+        result.adventure_keys = adventure_keys
+
+        result.unlocked_rooms = _get_unlocked_house_rooms(cursor)
+
+        pedigree = _parse_pedigree(cursor)
+        result.pedigree = pedigree
 
         classes, abilities, passives = _parse_unlocks(cursor)
         result.unlocked_classes = classes
         result.unlocked_abilities = abilities
         result.unlocked_passives = passives
 
-        # Cats
+        # ── Cats ──────────────────────────────────────────────────────
         try:
-            for db_key, blob in cursor.execute("SELECT key, data FROM cats ORDER BY key"):
+            for db_key, blob in cursor.execute(
+                "SELECT key, data FROM cats ORDER BY key"
+            ):
                 if blob is None:
                     continue
                 flat = _decompress_blob(blob)
                 if flat is None:
                     log.debug("Failed to decompress cat #%d", db_key)
                     continue
-                cat = _parse_flat_cat(flat, db_key)
+                cat = _parse_flat_cat(flat, db_key, current_day=result.current_day)
                 if cat is None:
                     log.debug("Failed to parse cat #%d", db_key)
                     continue
 
-                if db_key in house_keys:
+                # Status / room / adventure
+                if db_key in adventure_keys:
+                    cat.status = "adventure"
+                    cat.on_adventure = True
+                elif db_key in room_assignments:
                     cat.status = "in_house"
+                    cat.room = room_assignments[db_key]
                 elif cat.age == 0:
                     cat.status = "dead"
                 else:
@@ -391,10 +844,76 @@ def read_save(path: str | Path) -> SaveData:
     finally:
         conn.close()
 
+    # ── Post-parse resolution ─────────────────────────────────────────
+    _resolve_relationships(result, pedigree)
+
     house_count = sum(1 for c in result.cats if c.status == "in_house")
+    adventure_count = sum(1 for c in result.cats if c.status == "adventure")
     log.info(
-        "Read save '%s': %d cats (%d in house), day %d, %d classes unlocked",
-        path.name, len(result.cats), house_count,
-        result.current_day, len(result.unlocked_classes),
+        "Read save '%s': %d cats (%d in house, %d on adventure), day %d, %d classes",
+        path.name,
+        len(result.cats),
+        house_count,
+        adventure_count,
+        result.current_day,
+        len(result.unlocked_classes),
     )
     return result
+
+
+def _resolve_relationships(
+    result: SaveData,
+    pedigree: dict[int, tuple[int | None, int | None]],
+) -> None:
+    """Resolve parent/child links, generation depth, and filter relationships."""
+    key_to_cat = {c.db_key: c for c in result.cats}
+
+    # ── Parents from pedigree ─────────────────────────────────────────
+    for cat in result.cats:
+        ped = pedigree.get(cat.db_key)
+        if ped is None:
+            continue
+        pa_k, pb_k = ped
+        if pa_k is not None and pa_k in key_to_cat and pa_k != cat.db_key:
+            cat.parent_a_key = pa_k
+        if pb_k is not None and pb_k in key_to_cat and pb_k != cat.db_key:
+            cat.parent_b_key = pb_k
+
+    # ── Children (inverse of parent links) ────────────────────────────
+    for cat in result.cats:
+        cat.children_keys = []
+    for cat in result.cats:
+        for parent_key in (cat.parent_a_key, cat.parent_b_key):
+            if parent_key and parent_key in key_to_cat:
+                parent = key_to_cat[parent_key]
+                if cat.db_key not in parent.children_keys:
+                    parent.children_keys.append(cat.db_key)
+
+    # ── Filter lover/hater keys to existing cats ──────────────────────
+    for cat in result.cats:
+        cat.lover_keys = [k for k in cat.lover_keys if k in key_to_cat]
+        cat.hater_keys = [k for k in cat.hater_keys if k in key_to_cat]
+
+    # ── Generation depth (iterative, handles cycles) ──────────────────
+    for c in result.cats:
+        c.generation = 0 if (c.parent_a_key == 0 and c.parent_b_key == 0) else -1
+
+    for _ in range(len(result.cats) + 1):
+        changed = False
+        for c in result.cats:
+            pa = key_to_cat.get(c.parent_a_key)
+            pb = key_to_cat.get(c.parent_b_key)
+            pa_g = pa.generation if pa is not None else -1
+            pb_g = pb.generation if pb is not None else -1
+
+            if pa_g >= 0 or pb_g >= 0:
+                g = max(pa_g, pb_g) + 1
+                if c.generation != g:
+                    c.generation = g
+                    changed = True
+        if not changed:
+            break
+
+    for c in result.cats:
+        if c.generation < 0:
+            c.generation = 0

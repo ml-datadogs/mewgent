@@ -3,6 +3,7 @@
 Provides a fully populated SaveData so every overlay widget has data to render
 without needing a real Mewgenics .sav file.
 """
+
 from __future__ import annotations
 
 import random
@@ -12,28 +13,71 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from src.data.save_reader import SaveCat, SaveData
 
 _CAT_NAMES = [
-    "Mittens", "Whiskers", "Chairman Meow", "Purrlock Holmes",
-    "Catrick Swayze", "Clawdia", "Sir Fluffington", "Mewton",
-    "Pawcasso", "Catanova", "Furrdinand", "Meowzart",
-    "Cleo", "Gizmo", "Noodle", "Biscuit",
+    "Mittens",
+    "Whiskers",
+    "Chairman Meow",
+    "Purrlock Holmes",
+    "Catrick Swayze",
+    "Clawdia",
+    "Sir Fluffington",
+    "Mewton",
+    "Pawcasso",
+    "Catanova",
+    "Furrdinand",
+    "Meowzart",
+    "Cleo",
+    "Gizmo",
+    "Noodle",
+    "Biscuit",
 ]
 
 _CLASSES = [
-    "Fighter", "Hunter", "Mage", "Medic", "Tank", "Thief", "Necromancer",
-    "Tinkerer", "Butcher", "Druid", "Psychic", "Monk",
+    "Fighter",
+    "Hunter",
+    "Mage",
+    "Medic",
+    "Tank",
+    "Thief",
+    "Necromancer",
+    "Tinkerer",
+    "Butcher",
+    "Druid",
+    "Psychic",
+    "Monk",
 ]
 
 _ABILITIES = [
-    "Fireball", "IceBlast", "HealingTouch", "ShadowStrike",
-    "ShieldBash", "PoisonBite", "Resurrect", "TrapSet",
-    "Bullseye", "MegaBlast", "CraftArrow", "Brainstorm",
-    "Seppuku", "WolfClaws", "Reposition", "Blizzard",
+    "Fireball",
+    "IceBlast",
+    "HealingTouch",
+    "ShadowStrike",
+    "ShieldBash",
+    "PoisonBite",
+    "Resurrect",
+    "TrapSet",
+    "Bullseye",
+    "MegaBlast",
+    "CraftArrow",
+    "Brainstorm",
+    "Seppuku",
+    "WolfClaws",
+    "Reposition",
+    "Blizzard",
 ]
 
 _PASSIVES = [
-    "NineLives", "CatReflexes", "ThickFur", "NightVision",
-    "Purrsistence", "SharpClaws", "SoftPaws", "Curiosity",
-    "ThickSkull", "EternalHealth", "MadVisage", "PawMissile",
+    "NineLives",
+    "CatReflexes",
+    "ThickFur",
+    "NightVision",
+    "Purrsistence",
+    "SharpClaws",
+    "SoftPaws",
+    "Curiosity",
+    "ThickSkull",
+    "EternalHealth",
+    "MadVisage",
+    "PawMissile",
 ]
 
 

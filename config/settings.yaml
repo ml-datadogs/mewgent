@@ -1,13 +1,4 @@
 # Mewgent settings
-capture:
-  window_title: "Mewgenics"
-  interval_ms: 100
-  dpi_aware: true
-
-ocr:
-  gpu: true
-  languages: ["en"]
-
 database:
   path: "data/mewgent.db"
 
@@ -15,16 +6,15 @@ logging:
   level: "INFO"
   file: "data/mewgent.log"
 
-debug:
-  save_screenshots: false
-  screenshots_dir: "debug_screenshots"
-
 save_file:
   enabled: true
   path: ""
   poll_interval_ms: 2000
 
 llm:
-  enabled: true
+  enabled: false
   model: gpt-4o-mini
-  mock: true
+  mock: false
+
+hotkey:
+  toggle: "Ctrl+Shift+M"

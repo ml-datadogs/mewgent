@@ -21,12 +21,16 @@ interface BridgeObject {
   autofill_team: () => void;
   autofill_team_llm: () => void;
   request_close: () => void;
+  begin_drag: (screen_x: number, screen_y: number) => void;
+  update_drag: (screen_x: number, screen_y: number) => void;
+  end_drag: () => void;
   get_breeding_advice: (cat_a_key: number, cat_b_key: number, stimulation: number, cb: (json: string) => void) => void;
   get_breeding_rankings: (collar_name: string, stimulation: number, cb: (json: string) => void) => void;
   suggest_breeding_llm: (collar_name: string, stimulation: number) => void;
 
   roster_updated: { connect: (fn: (json: string) => void) => void };
   team_updated: { connect: (fn: (json: string) => void) => void };
+  team_synergy_updated: { connect: (fn: (synergy: string) => void) => void };
   save_info_updated: { connect: (fn: (json: string) => void) => void };
   llm_status_changed: { connect: (fn: (status: string) => void) => void };
   collars_updated: { connect: (fn: (json: string) => void) => void };
@@ -105,12 +109,28 @@ export function requestClose() {
   bridge?.request_close();
 }
 
+export function beginDrag(screenX: number, screenY: number) {
+  bridge?.begin_drag(Math.round(screenX), Math.round(screenY));
+}
+
+export function updateDrag(screenX: number, screenY: number) {
+  bridge?.update_drag(Math.round(screenX), Math.round(screenY));
+}
+
+export function endDrag() {
+  bridge?.end_drag();
+}
+
 export function onRosterUpdated(fn: (roster: RosterEntry[]) => void) {
   bridge?.roster_updated.connect((json: string) => fn(JSON.parse(json)));
 }
 
 export function onTeamUpdated(fn: (team: (TeamSlot | null)[]) => void) {
   bridge?.team_updated.connect((json: string) => fn(JSON.parse(json)));
+}
+
+export function onTeamSynergyUpdated(fn: (synergy: string) => void) {
+  bridge?.team_synergy_updated.connect(fn);
 }
 
 export function onSaveInfoUpdated(fn: (info: { day: number; cat_count: number; status: string }) => void) {

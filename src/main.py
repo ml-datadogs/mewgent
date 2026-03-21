@@ -2,6 +2,7 @@
 
 Entry point: ``python -m src.main``
 """
+
 from __future__ import annotations
 
 import logging
@@ -10,8 +11,12 @@ import sys
 import time
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from src.utils.config_loader import PROJECT_ROOT, AppConfig, load_config
 from src.utils.logging_setup import setup_logging
+
+load_dotenv(PROJECT_ROOT / "src" / ".env")
 
 log = logging.getLogger("mewgent.main")
 
@@ -27,6 +32,7 @@ def _kill_previous_instance() -> None:
         if old_pid == os.getpid():
             return
         import subprocess
+
         subprocess.run(
             ["taskkill", "/PID", str(old_pid), "/F"],
             stdout=subprocess.DEVNULL,
@@ -47,113 +53,6 @@ def _write_pidfile() -> None:
 
 def _remove_pidfile() -> None:
     PIDFILE.unlink(missing_ok=True)
-
-
-def _build_pipeline(cfg: AppConfig):
-    """Instantiate all pipeline components from config."""
-    from src.capture.screen_grab import ScreenGrabber
-    from src.capture.window_bind import WindowBinder
-    from src.data.db import SQLiteStore
-    from src.data.dedup import DuplicateGuard
-    from src.vision.ocr_engine import OCREngine
-    from src.vision.region_crop import RegionCropper
-    from src.vision.scene_detect import SceneDetector
-
-    binder = WindowBinder(
-        title=cfg.capture.window_title,
-        dpi_aware=cfg.capture.dpi_aware,
-    )
-
-    debug_dir = str(PROJECT_ROOT / cfg.debug.screenshots_dir) if cfg.debug.save_screenshots else None
-    grabber = ScreenGrabber(debug_dir=debug_dir)
-
-    detector = SceneDetector()
-    for name, tdef in cfg.regions.scene_templates.items():
-        tpl_path = PROJECT_ROOT / tdef.file
-        detector.load_template(name, tpl_path, tdef.match_threshold, tdef.match_region)
-
-    ref_res = tuple(cfg.regions.game_resolution)
-    cropper = RegionCropper(cfg.regions.regions, reference_resolution=ref_res)
-
-    ocr = OCREngine(gpu=cfg.ocr.gpu, languages=cfg.ocr.languages)
-
-    db = SQLiteStore(str(PROJECT_ROOT / cfg.database.path))
-    dedup = DuplicateGuard()
-
-    return binder, grabber, detector, cropper, ocr, db, dedup
-
-
-def run_headless(cfg: AppConfig) -> None:
-    """Main capture loop without GUI — useful for testing the pipeline."""
-    from src.data.stat_parser import parse_regions
-
-    binder, grabber, detector, cropper, ocr, db, dedup = _build_pipeline(cfg)
-
-    allowlists: dict[str, str] = {}
-    for name, rdef in cfg.regions.regions.items():
-        if rdef.is_stat_triple:
-            for suffix in ("total", "base", "bonus"):
-                allowlists[f"{name}_{suffix}"] = rdef.allowlist
-        else:
-            allowlists[name] = rdef.allowlist
-
-    log.info("Starting headless capture loop  (interval=%dms)", cfg.capture.interval_ms)
-    log.info("Waiting for game window '%s'…", cfg.capture.window_title)
-    binder.wait_for_window(poll_interval=2.0)
-    log.info("Game window found — entering scan loop")
-
-    interval_s = cfg.capture.interval_ms / 1000.0
-
-    try:
-        while True:
-            hwnd = binder.hwnd
-            if hwnd is None:
-                binder.find()
-                time.sleep(interval_s)
-                continue
-
-            frame = grabber.capture_and_save_debug(hwnd)
-            if frame is None:
-                binder.find()
-                time.sleep(interval_s)
-                continue
-
-            # Layer 1: frame-level dedup
-            if dedup.is_same_frame(frame):
-                time.sleep(interval_s)
-                continue
-
-            scene = detector.detect(frame)
-            if scene != "cat_stats_screen":
-                log.debug("Not a cat stats screen (scene=%s)", scene)
-                time.sleep(interval_s)
-                continue
-
-            crops = cropper.crop_all(frame)
-            ocr_results = ocr.recognise_regions(crops, allowlists)
-            stats = parse_regions(ocr_results)
-
-            if not stats.cat_name:
-                log.debug("OCR returned empty cat name — skipping")
-                time.sleep(interval_s)
-                continue
-
-            # Layer 2: field-level dedup
-            if dedup.is_duplicate_stats(stats):
-                time.sleep(interval_s)
-                continue
-
-            # Layer 3: DB insert (UNIQUE constraint as final guard)
-            snap_hash = dedup.snapshot_hash(stats)
-            db.save_cat(stats, snap_hash)
-            log.info("Cats in DB: %d", db.count_cats())
-
-            time.sleep(interval_s)
-
-    except KeyboardInterrupt:
-        log.info("Stopped by user")
-    finally:
-        db.close()
 
 
 def _resolve_save_path(cfg: AppConfig) -> Path | None:
@@ -190,8 +89,10 @@ def run_gui(cfg: AppConfig) -> None:
         save_path = _resolve_save_path(cfg)
         if save_path:
             from src.capture.save_watcher import SaveWatcher
+
             save_watcher = SaveWatcher(
-                save_path, poll_ms=cfg.save_file.poll_interval_ms,
+                save_path,
+                poll_ms=cfg.save_file.poll_interval_ms,
             )
 
     bridge = OverlayBridge(cfg)
@@ -219,12 +120,15 @@ def run_dev_ui(cfg: AppConfig) -> None:
         save_path = _resolve_save_path(cfg)
         if save_path:
             from src.capture.save_watcher import SaveWatcher
+
             save_watcher = SaveWatcher(
-                save_path, poll_ms=cfg.save_file.poll_interval_ms,
+                save_path,
+                poll_ms=cfg.save_file.poll_interval_ms,
             )
 
     if save_watcher is None:
         from src.capture.mock_save_watcher import MockSaveWatcher
+
         save_watcher = MockSaveWatcher()
         log.info("No save file — using mock save data for dev UI")
 
@@ -248,10 +152,7 @@ def main() -> None:
     _write_pidfile()
 
     try:
-        if "--headless" in sys.argv:
-            run_headless(cfg)
-        else:
-            run_gui(cfg)
+        run_gui(cfg)
     finally:
         _remove_pidfile()
 

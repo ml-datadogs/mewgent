@@ -29,7 +29,8 @@ def main(argv: list[str] | None = None) -> None:
         help="Output directory (default: wiki_data/).",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Enable debug logging.",
     )

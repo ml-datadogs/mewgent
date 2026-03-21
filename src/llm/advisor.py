@@ -80,7 +80,11 @@ def _cat_summary(cat: SaveCat) -> str:
         f"INT={cat.base_int} SPD={cat.base_spd} CHA={cat.base_cha} LCK={cat.base_lck}"
     )
     abilities = ", ".join(cat.abilities) if cat.abilities else "none"
-    return f"{cat.name} (Lv{cat.level}, Age{cat.age}): {stats} | abilities: {abilities}"
+    passives = ", ".join(cat.passives) if cat.passives else "none"
+    return (
+        f"{cat.name} (Lv{cat.level}, Age{cat.age}): {stats} "
+        f"| abilities: {abilities} | passives: {passives}"
+    )
 
 
 class LLMAdvisor:
@@ -93,7 +97,11 @@ class LLMAdvisor:
     """
 
     def __init__(
-        self, *, model: str = "gpt-4o-mini", enabled: bool = True, mock: bool = False,
+        self,
+        *,
+        model: str = "gpt-4o-mini",
+        enabled: bool = True,
+        mock: bool = False,
     ) -> None:
         self._model = model
         self._enabled = enabled
@@ -120,6 +128,7 @@ class LLMAdvisor:
 
         try:
             from openai import OpenAI
+
             self._client = OpenAI(api_key=api_key)
             self._wiki_context = _load_wiki_context()
             self._breeding_context = _load_breeding_context()
@@ -134,7 +143,9 @@ class LLMAdvisor:
             return self._enabled
         return self._enabled and self._client is not None
 
-    def _chat(self, messages: list[dict[str, str]], temperature: float = 0.3) -> str | None:
+    def _chat(
+        self, messages: list[dict[str, str]], temperature: float = 0.3
+    ) -> str | None:
         if not self.available or self._mock:
             return None
         try:
@@ -142,7 +153,7 @@ class LLMAdvisor:
                 model=self._model,
                 messages=messages,
                 temperature=temperature,
-                max_tokens=1500,
+                max_completion_tokens=1500,
             )
             return resp.choices[0].message.content
         except Exception:
@@ -176,13 +187,15 @@ class LLMAdvisor:
             f"For each class, provide a score adjustment between -2.0 and +2.0 "
             f"based on how well the cat's abilities synergize with that class. "
             f"Respond with ONLY a JSON object mapping class name to float adjustment. "
-            f"Example: {{\"Fighter\": 0.5, \"Mage\": -1.0, ...}}"
+            f'Example: {{"Fighter": 0.5, "Mage": -1.0, ...}}'
         )
 
-        raw = self._chat([
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ])
+        raw = self._chat(
+            [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ]
+        )
         if not raw:
             return {}
 
@@ -206,10 +219,7 @@ class LLMAdvisor:
         base_scores: list[tuple[CollarDef, float]],
     ) -> dict[str, float]:
         rng = random.Random(cat.db_key)
-        return {
-            c.name: round(rng.uniform(-0.8, 1.2), 1)
-            for c, _ in base_scores
-        }
+        return {c.name: round(rng.uniform(-0.8, 1.2), 1) for c, _ in base_scores}
 
     # ── Team synergy ─────────────────────────────────────────────────
 
@@ -218,11 +228,13 @@ class LLMAdvisor:
         cats: list["SaveCat"],
         collars: list["CollarDef"],
         base_scores: dict[int, list[tuple["CollarDef", float]]],
-    ) -> list[dict[str, Any]] | None:
+    ) -> dict[str, Any] | None:
         """Suggest a balanced 4-cat team using LLM reasoning.
 
-        Returns list of 4 dicts with keys: cat_name, cat_db_key, collar_name,
-        score, reason. Returns None if LLM unavailable.
+        Returns dict with keys:
+          - "team": list of 4 dicts (cat_name, cat_db_key, collar_name, reason)
+          - "synergy": 1-2 sentence team synergy analysis
+        Returns None if LLM unavailable.
         """
         if not self.available or len(cats) < 2:
             return None
@@ -251,16 +263,22 @@ class LLMAdvisor:
             f"- Balance the team: include a tank/frontliner, a healer/support, "
             f"and damage dealers where possible\n"
             f"- Each cat should be assigned their best-fitting class\n"
-            f"- Consider ability synergies if abilities are listed\n\n"
-            f"Respond with ONLY a JSON array of 4 objects, each with:\n"
-            f"  cat_name (str), cat_db_key (int), collar_name (str), "
-            f"reason (1 sentence)\n"
+            f"- Consider ability synergies if abilities are listed\n"
+            f"- Consider passive trait synergies and how they complement the team\n\n"
+            f"Respond with ONLY a JSON object with two keys:\n"
+            f'  "team": array of 4 objects, each with cat_name (str), '
+            f"cat_db_key (int), collar_name (str), reason (1 sentence)\n"
+            f'  "synergy": 1-2 sentences analyzing the chosen team\'s '
+            f"class/passive interactions and overall balance\n"
         )
 
-        raw = self._chat([
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ], temperature=0.2)
+        raw = self._chat(
+            [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+        )
         if not raw:
             return None
 
@@ -269,9 +287,18 @@ class LLMAdvisor:
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
             result = json.loads(raw)
-            if not isinstance(result, list) or len(result) == 0:
-                return None
-            return result[:4]
+
+            if isinstance(result, list):
+                return {"team": result[:4], "synergy": ""}
+            if isinstance(result, dict):
+                team = result.get("team", [])
+                if not isinstance(team, list) or len(team) == 0:
+                    return None
+                return {
+                    "team": team[:4],
+                    "synergy": str(result.get("synergy", "")),
+                }
+            return None
         except (json.JSONDecodeError, ValueError):
             log.warning("Failed to parse team composition response")
             return None
@@ -281,7 +308,7 @@ class LLMAdvisor:
         cats: list["SaveCat"],
         collars: list["CollarDef"],
         base_scores: dict[int, list[tuple["CollarDef", float]]],
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         time.sleep(0.8)
 
         desired_roles = ["Tank", "Cleric", "Fighter", "Mage"]
@@ -289,10 +316,10 @@ class LLMAdvisor:
         available_roles = [r for r in desired_roles if r in collar_by_name]
         if len(available_roles) < 4:
             extra = [c.name for c in collars if c.name not in available_roles]
-            available_roles.extend(extra[:4 - len(available_roles)])
+            available_roles.extend(extra[: 4 - len(available_roles)])
 
         used_cats: set[int] = set()
-        result: list[dict[str, Any]] = []
+        team: list[dict[str, Any]] = []
 
         for role in available_roles[:4]:
             best_cat = None
@@ -310,15 +337,28 @@ class LLMAdvisor:
                 continue
 
             tag = _ROLE_TAGS.get(role, "specialist")
-            result.append({
-                "cat_name": best_cat.name,
-                "cat_db_key": best_cat.db_key,
-                "collar_name": role,
-                "reason": f"Best {tag} candidate with a score of {best_score:.1f}.",
-            })
+            passive_note = ""
+            if best_cat.passives:
+                passive_note = f" Passive '{best_cat.passives[0]}' adds extra value."
+            team.append(
+                {
+                    "cat_name": best_cat.name,
+                    "cat_db_key": best_cat.db_key,
+                    "collar_name": role,
+                    "reason": f"Best {tag} candidate with a score of {best_score:.1f}.{passive_note}",
+                }
+            )
             used_cats.add(best_cat.db_key)
 
-        return result
+        role_list = " + ".join(
+            _ROLE_TAGS.get(e["collar_name"], e["collar_name"]) for e in team
+        )
+        synergy = (
+            f"Balanced composition with {role_list}. "
+            f"Passives complement the team's frontline and support roles."
+        )
+
+        return {"team": team, "synergy": synergy}
 
     # ── Explanations ─────────────────────────────────────────────────
 
@@ -353,10 +393,13 @@ class LLMAdvisor:
             f"Respond with ONLY the explanation text, no JSON."
         )
 
-        raw = self._chat([
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ], temperature=0.4)
+        raw = self._chat(
+            [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+        )
         if raw:
             explanation = raw.strip()[:200]
             self._explanation_cache[cache_key] = explanation
@@ -372,8 +415,12 @@ class LLMAdvisor:
         time.sleep(0.3)
 
         stat_map = {
-            "STR": cat.base_str, "DEX": cat.base_dex, "CON": cat.base_con,
-            "INT": cat.base_int, "SPD": cat.base_spd, "CHA": cat.base_cha,
+            "STR": cat.base_str,
+            "DEX": cat.base_dex,
+            "CON": cat.base_con,
+            "INT": cat.base_int,
+            "SPD": cat.base_spd,
+            "CHA": cat.base_cha,
             "LCK": cat.base_lck,
         }
         best_stat = max(stat_map, key=lambda k: stat_map[k])
@@ -384,7 +431,10 @@ class LLMAdvisor:
         rng = random.Random(cat.db_key + hash(collar.name))
         template = rng.choice(_MOCK_EXPLANATIONS)
         explanation = template.format(
-            stat=best_stat, role=role, ability=ability, weak=worst_stat,
+            stat=best_stat,
+            role=role,
+            ability=ability,
+            weak=worst_stat,
         )
         self._explanation_cache[f"{cat.db_key}:{collar.name}"] = explanation
         return explanation
@@ -433,10 +483,13 @@ class LLMAdvisor:
             f"cat_b_key (int), reason (1-2 sentences)\n"
         )
 
-        raw = self._chat([
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ], temperature=0.3)
+        raw = self._chat(
+            [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+        )
         if not raw:
             return None
 
@@ -462,8 +515,8 @@ class LLMAdvisor:
         males = [c for c in cats if c.gender == "male"]
         females = [c for c in cats if c.gender == "female"]
         if not males or not females:
-            males = cats[:len(cats) // 2]
-            females = cats[len(cats) // 2:]
+            males = cats[: len(cats) // 2]
+            females = cats[len(cats) // 2 :]
 
         rng = random.Random(hash(collar_name))
         result: list[dict[str, Any]] = []
@@ -475,13 +528,15 @@ class LLMAdvisor:
             used.add(m.db_key)
             used.add(f.db_key)
             role = _ROLE_TAGS.get(collar_name, "specialist")
-            result.append({
-                "cat_a_name": m.name,
-                "cat_a_key": m.db_key,
-                "cat_b_name": f.name,
-                "cat_b_key": f.db_key,
-                "reason": f"Strong stat complementarity for {role} offspring.",
-            })
+            result.append(
+                {
+                    "cat_a_name": m.name,
+                    "cat_a_key": m.db_key,
+                    "cat_b_name": f.name,
+                    "cat_b_key": f.db_key,
+                    "reason": f"Strong stat complementarity for {role} offspring.",
+                }
+            )
         return result
 
     def explain_breeding_pair(
@@ -519,10 +574,13 @@ class LLMAdvisor:
             f"Respond with ONLY 2-4 sentences of explanation, no JSON."
         )
 
-        raw = self._chat([
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ], temperature=0.4)
+        raw = self._chat(
+            [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+        )
         if raw:
             explanation = raw.strip()[:400]
             self._explanation_cache[cache_key] = explanation
@@ -538,12 +596,20 @@ class LLMAdvisor:
         time.sleep(0.4)
 
         stat_a = {
-            "STR": cat_a.base_str, "DEX": cat_a.base_dex, "CON": cat_a.base_con,
-            "INT": cat_a.base_int, "SPD": cat_a.base_spd, "CHA": cat_a.base_cha,
+            "STR": cat_a.base_str,
+            "DEX": cat_a.base_dex,
+            "CON": cat_a.base_con,
+            "INT": cat_a.base_int,
+            "SPD": cat_a.base_spd,
+            "CHA": cat_a.base_cha,
         }
         stat_b = {
-            "STR": cat_b.base_str, "DEX": cat_b.base_dex, "CON": cat_b.base_con,
-            "INT": cat_b.base_int, "SPD": cat_b.base_spd, "CHA": cat_b.base_cha,
+            "STR": cat_b.base_str,
+            "DEX": cat_b.base_dex,
+            "CON": cat_b.base_con,
+            "INT": cat_b.base_int,
+            "SPD": cat_b.base_spd,
+            "CHA": cat_b.base_cha,
         }
         best_a = max(stat_a, key=lambda k: stat_a[k])
         best_b = max(stat_b, key=lambda k: stat_b[k])
@@ -554,9 +620,13 @@ class LLMAdvisor:
             f"making their offspring promising {role} candidates. "
         )
         if cat_a.breed_coefficient > 0.2 or cat_b.breed_coefficient > 0.2:
-            explanation += "Watch for inbreeding risk -- consider mixing in stray bloodlines."
+            explanation += (
+                "Watch for inbreeding risk -- consider mixing in stray bloodlines."
+            )
         else:
-            explanation += "Low inbreeding coefficients mean healthy offspring are likely."
+            explanation += (
+                "Low inbreeding coefficients mean healthy offspring are likely."
+            )
 
         key = f"breed:{cat_a.db_key}:{cat_b.db_key}:{collar_name}:0"
         self._explanation_cache[key] = explanation

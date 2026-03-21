@@ -1,0 +1,58 @@
+version: "3"
+
+tasks:
+  lint:
+    desc: Run ruff linter
+    cmds:
+      - uv run ruff check .
+
+  format:
+    desc: Run ruff formatter
+    cmds:
+      - uv run ruff format .
+
+  format:check:
+    desc: Check formatting without making changes
+    cmds:
+      - uv run ruff format --check .
+
+  typecheck:
+    desc: Run ty type checker
+    cmds:
+      - uv run ty check
+
+  check:
+    desc: Run all checks (lint + format check + typecheck)
+    cmds:
+      - task: lint
+      - task: format:check
+      - task: typecheck
+
+  fix:
+    desc: Auto-fix lint errors and format code
+    cmds:
+      - uv run ruff check --fix .
+      - uv run ruff format .
+
+  test:
+    desc: Run pytest test suite
+    cmds:
+      - uv run pytest tests/ -v
+
+  build:ui:
+    desc: Build React frontend
+    dir: ui
+    cmds:
+      - npm ci
+      - npm run build
+
+  build:exe:
+    desc: Bundle into Windows executable with PyInstaller
+    deps: [build:ui]
+    cmds:
+      - uv run pyinstaller mewgent.spec --noconfirm
+
+  build:
+    desc: Full build (UI + executable)
+    cmds:
+      - task: build:exe

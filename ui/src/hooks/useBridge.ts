@@ -8,6 +8,7 @@ import {
   getSaveInfo,
   onRosterUpdated,
   onTeamUpdated,
+  onTeamSynergyUpdated,
   onSaveInfoUpdated,
   onLlmStatusChanged,
   onCollarsUpdated,
@@ -19,6 +20,7 @@ export interface BridgeState {
   roster: RosterEntry[];
   collars: CollarDef[];
   team: (TeamSlot | null)[];
+  teamSynergy: string;
   saveInfo: { day: number; cat_count: number; status: string };
   llmStatus: string;
 }
@@ -28,6 +30,7 @@ export function useBridge(): BridgeState {
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [collars, setCollars] = useState<CollarDef[]>([]);
   const [team, setTeam] = useState<(TeamSlot | null)[]>([null, null, null, null]);
+  const [teamSynergy, setTeamSynergy] = useState('');
   const [saveInfo, setSaveInfo] = useState({ day: 0, cat_count: 0, status: 'Waiting for save data...' });
   const [llmStatus, setLlmStatus] = useState('');
   const initialized = useRef(false);
@@ -53,11 +56,12 @@ export function useBridge(): BridgeState {
 
       onRosterUpdated(setRoster);
       onTeamUpdated(setTeam);
+      onTeamSynergyUpdated(setTeamSynergy);
       onSaveInfoUpdated(setSaveInfo);
       onLlmStatusChanged(setLlmStatus);
       onCollarsUpdated(setCollars);
     });
   }, []);
 
-  return { connected, roster, collars, team, saveInfo, llmStatus };
+  return { connected, roster, collars, team, teamSynergy, saveInfo, llmStatus };
 }

@@ -1,7 +1,7 @@
 [project]
 name = "mewgent"
 version = "0.1.0"
-description = "Live Mewgenics companion app — OCR cat stats from screen capture"
+description = "Live Mewgenics companion app — reads save files and provides breeding advice"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -13,37 +13,13 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "markdownify>=0.14",
     "openai>=1.0",
+    "python-dotenv>=1.0",
 ]
 
-[project.optional-dependencies]
-pipeline = [
-    "opencv-contrib-python>=4.9",
-    "easyocr>=1.7",
-    "imagehash>=4.3",
-    "pywin32>=306; sys_platform == 'win32'",
-    "numpy>=1.26",
-    "torch>=2.2",
-    "torchvision>=0.17",
-]
+[dependency-groups]
 dev = [
     "pytest>=8.0",
+    "ruff>=0.15.7",
+    "ty>=0.0.24",
+    "pyinstaller>=6.0",
 ]
-
-[tool.uv]
-override-dependencies = [
-    "opencv-python-headless; python_version < '0'",
-    "opencv-python; python_version < '0'",
-]
-
-[tool.uv.sources]
-torch = [
-    { index = "pytorch-cu121", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
-]
-torchvision = [
-    { index = "pytorch-cu121", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
-]
-
-[[tool.uv.index]]
-name = "pytorch-cu121"
-url = "https://download.pytorch.org/whl/cu121"
-explicit = true

@@ -110,7 +110,9 @@ class WikiScraper:
             except httpx.HTTPError as exc:
                 log.warning("Failed to download %s: %s", img["url"], exc)
 
-        log.info("Downloaded %d / %d images to %s", len(downloaded), len(images), output_dir)
+        log.info(
+            "Downloaded %d / %d images to %s", len(downloaded), len(images), output_dir
+        )
         return downloaded
 
     # ------------------------------------------------------------------
@@ -146,6 +148,7 @@ class WikiScraper:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def _int_attr(tag: Tag, attr: str) -> int:
     val = tag.get(attr)
@@ -185,6 +188,7 @@ def _sanitise_filename(name: str) -> str:
 def _clone_tag(tag: Tag) -> Tag:
     """Deep-copy a BS4 tag to avoid mutating the original soup."""
     import copy
+
     return copy.copy(tag)
 
 
@@ -240,7 +244,9 @@ def _clean_markdown(text: str, page_name: str) -> str:
                 continue
             if "help **the mewgenics wiki**" in stripped.lower():
                 continue
-            if stripped.startswith("*Missing content:") or stripped.startswith("***Missing content:"):
+            if stripped.startswith("*Missing content:") or stripped.startswith(
+                "***Missing content:"
+            ):
                 continue
             skip_incomplete_banner = False
         line = re.sub(r"\[([^\]]+)\]\(/wiki/[^\)]+\)", r"\1", line)

@@ -2,14 +2,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 interface StatusBarProps {
   status: string;
+  className?: string;
 }
 
-export function StatusBar({ status }: StatusBarProps) {
+export function StatusBar({ status, className }: StatusBarProps) {
   const isLoading = status.toLowerCase().includes('waiting');
   const isLoaded = status.toLowerCase().includes('loaded');
 
   return (
-    <div className="flex items-center justify-center gap-2 py-0.5">
+    <div className={`flex items-center justify-center gap-2 py-0.5${className ? ` ${className}` : ''}`}>
       <motion.div
         className={`w-1.5 h-1.5 rounded-full ${
           isLoaded ? 'bg-good' : isLoading ? 'bg-medium' : 'bg-text-dim'

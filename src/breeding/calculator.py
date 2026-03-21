@@ -144,12 +144,16 @@ def _expected_stat(val_a: int, val_b: int, high_prob: float) -> float:
 def _stimulation_tips(stimulation: int) -> list[str]:
     tips: list[str] = []
     if stimulation < 32:
-        tips.append(f"Stimulation {stimulation} < 32: first active ability NOT guaranteed ({first_active_ability_chance(stimulation):.0%})")
+        tips.append(
+            f"Stimulation {stimulation} < 32: first active ability NOT guaranteed ({first_active_ability_chance(stimulation):.0%})"
+        )
     else:
         tips.append("Stimulation 32+: first active ability guaranteed")
 
     if stimulation < 95:
-        tips.append(f"Stimulation {stimulation} < 95: passive ability NOT guaranteed ({passive_ability_chance(stimulation):.0%})")
+        tips.append(
+            f"Stimulation {stimulation} < 95: passive ability NOT guaranteed ({passive_ability_chance(stimulation):.0%})"
+        )
     elif stimulation < 100:
         tips.append("Stimulation 95+: passive ability guaranteed")
 
@@ -159,7 +163,9 @@ def _stimulation_tips(stimulation: int) -> list[str]:
     if stimulation >= 196:
         tips.append("Stimulation 196+: second active ability guaranteed")
     elif stimulation >= 95:
-        tips.append(f"Stimulation {stimulation} < 196: second active only {second_active_ability_chance(stimulation):.0%}")
+        tips.append(
+            f"Stimulation {stimulation} < 196: second active only {second_active_ability_chance(stimulation):.0%}"
+        )
 
     return tips
 
@@ -192,7 +198,8 @@ def analyze_pair(
         passive_chance=round(passive_ability_chance(stimulation), 4),
         expected_stats=expected,
         inbreeding_warning=_inbreeding_warning(
-            cat_a.breed_coefficient, cat_b.breed_coefficient,
+            cat_a.breed_coefficient,
+            cat_b.breed_coefficient,
         ),
         parent_a_coeff=cat_a.breed_coefficient,
         parent_b_coeff=cat_b.breed_coefficient,
@@ -214,7 +221,7 @@ def rank_pairs_for_class(
 
     rankings: list[PairRanking] = []
     for i, a in enumerate(cats):
-        for b in cats[i + 1:]:
+        for b in cats[i + 1 :]:
             if a.gender == b.gender:
                 continue
 
@@ -240,14 +247,16 @@ def rank_pairs_for_class(
             if best_stats:
                 reason += f" (strong {', '.join(best_stats)})"
 
-            rankings.append(PairRanking(
-                cat_a_key=a.db_key,
-                cat_a_name=a.name,
-                cat_b_key=b.db_key,
-                cat_b_name=b.name,
-                expected_score=score,
-                reason=reason,
-            ))
+            rankings.append(
+                PairRanking(
+                    cat_a_key=a.db_key,
+                    cat_a_name=a.name,
+                    cat_b_key=b.db_key,
+                    cat_b_name=b.name,
+                    expected_score=score,
+                    reason=reason,
+                )
+            )
 
     rankings.sort(key=lambda r: r.expected_score, reverse=True)
     return rankings[:max_results]

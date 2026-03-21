@@ -17,7 +17,15 @@ def setup_logging(level: str = "INFO", log_file: str | None = "mewgent.log") -> 
 
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(fmt)
-    console.setStream(open(sys.stdout.fileno(), mode="w", encoding="utf-8", errors="replace", closefd=False))
+    console.setStream(
+        open(
+            sys.stdout.fileno(),
+            mode="w",
+            encoding="utf-8",
+            errors="replace",
+            closefd=False,
+        )
+    )
     root.addHandler(console)
 
     if log_file:

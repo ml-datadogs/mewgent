@@ -11,6 +11,7 @@ interface TeamPanelProps {
   collars: CollarDef[];
   llmStatus: string;
   llmAvailable: boolean;
+  teamSynergy: string;
 }
 
 function TeamScore({ value }: { value: number }) {
@@ -22,7 +23,7 @@ function TeamScore({ value }: { value: number }) {
   );
 }
 
-export function TeamPanel({ team, collars, llmStatus, llmAvailable }: TeamPanelProps) {
+export function TeamPanel({ team, collars, llmStatus, llmAvailable, teamSynergy }: TeamPanelProps) {
   const totalScore = team.reduce((sum, s) => sum + (s?.score ?? 0), 0);
 
   const handleClassChange = (slotIdx: number, collarName: string) => {
@@ -56,6 +57,22 @@ export function TeamPanel({ team, collars, llmStatus, llmAvailable }: TeamPanelP
             ))}
           </AnimatePresence>
         </div>
+
+        <AnimatePresence>
+          {teamSynergy && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25 }}
+              className="overflow-hidden"
+            >
+              <p className="text-[10px] text-text-dim font-serif italic leading-snug mt-1.5 px-1">
+                {teamSynergy}
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="flex items-center justify-center gap-2 mt-2.5">
           <Button onClick={autofillTeam}>

@@ -3,6 +3,7 @@
 Exposes roster, team, breeding, and LLM data to JavaScript. Receives signals
 from SaveWatcher and re-publishes them as QWebChannel signals.
 """
+
 from __future__ import annotations
 
 import json
@@ -12,7 +13,7 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
-from src.breeding.calculator import BreedingAdvice, analyze_pair, rank_pairs_for_class
+from src.breeding.calculator import analyze_pair, rank_pairs_for_class
 from src.data.collars import (
     COLLARS,
     CollarDef,
@@ -67,19 +68,19 @@ def _compute_viable(
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for cat in house_cats:
-        if cat.age == 0 and all(
-            getattr(cat, f"base_{s}") == 0 for s in STAT_ORDER
-        ):
+        if cat.age == 0 and all(getattr(cat, f"base_{s}") == 0 for s in STAT_ORDER):
             continue
         cs = save_cat_to_stats(cat)
         scores = [collar_score(c, cs) for c in collars]
         best_idx = max(range(len(scores)), key=lambda k: scores[k])
-        result.append({
-            "cat": _cat_dict(cat),
-            "scores": [round(s, 2) for s in scores],
-            "best_idx": best_idx,
-            "best_score": round(scores[best_idx], 2),
-        })
+        result.append(
+            {
+                "cat": _cat_dict(cat),
+                "scores": [round(s, 2) for s in scores],
+                "best_idx": best_idx,
+                "best_score": round(scores[best_idx], 2),
+            }
+        )
     result.sort(key=lambda x: x["best_score"], reverse=True)
     return result
 
@@ -99,7 +100,9 @@ class _LLMTeamWorker(QThread):
     def run(self):
         try:
             result = self._advisor.suggest_team_composition(
-                self._cats, self._collars, self._base_scores,
+                self._cats,
+                self._collars,
+                self._base_scores,
             )
             self.result_ready.emit(result)
         except Exception:
@@ -122,7 +125,9 @@ class _LLMBreedWorker(QThread):
     def run(self):
         try:
             result = self._advisor.suggest_breeding_pairs(
-                self._cats, self._collar_name, self._stimulation,
+                self._cats,
+                self._collar_name,
+                self._stimulation,
             )
             self.result_ready.emit(result)
         except Exception:
@@ -135,6 +140,7 @@ class OverlayBridge(QObject):
 
     roster_updated = Signal(str)
     team_updated = Signal(str)
+    team_synergy_updated = Signal(str)
     save_info_updated = Signal(str)
     llm_status_changed = Signal(str)
     collars_updated = Signal(str)
@@ -149,12 +155,21 @@ class OverlayBridge(QObject):
         self._team_slots: list[dict | None] = [None, None, None, None]
         self._viable: list[dict[str, Any]] = []
         self._status = "Waiting for save data..."
+        self._shell = None
+        self._drag_origin_x: int = 0
+        self._drag_origin_y: int = 0
+        self._drag_win_x: int = 0
+        self._drag_win_y: int = 0
 
         self._llm = LLMAdvisor(
             model=cfg.llm.model,
             enabled=cfg.llm.enabled,
             mock=cfg.llm.mock,
         )
+
+    def set_shell(self, shell) -> None:
+        """Store a reference to the OverlayShell for window management."""
+        self._shell = shell
 
     @property
     def llm(self) -> LLMAdvisor:
@@ -177,11 +192,13 @@ class OverlayBridge(QObject):
     @Slot(result=str)
     def get_save_info(self) -> str:
         sd = self._save_data
-        return json.dumps({
-            "day": sd.current_day if sd else 0,
-            "cat_count": len(self._house_cats),
-            "status": self._status,
-        })
+        return json.dumps(
+            {
+                "day": sd.current_day if sd else 0,
+                "cat_count": len(self._house_cats),
+                "status": self._status,
+            }
+        )
 
     @Slot(int, int, str)
     def set_team_slot(self, slot: int, cat_db_key: int, collar_name: str) -> None:
@@ -190,6 +207,8 @@ class OverlayBridge(QObject):
         cat = next((c for c in self._house_cats if c.db_key == cat_db_key), None)
         collar = collar_by_name(collar_name)
         if cat is None or collar is None:
+            return
+        if cat.age <= 1:
             return
         cs = save_cat_to_stats(cat)
         score = collar_score(collar, cs)
@@ -210,18 +229,15 @@ class OverlayBridge(QObject):
     def clear_team(self) -> None:
         self._team_slots = [None, None, None, None]
         self._emit_team()
+        self.team_synergy_updated.emit("")
 
     @Slot()
     def autofill_team(self) -> None:
         if not self._house_cats or not self._available_collars:
             return
         self._team_slots = [None, None, None, None]
-        available = [
-            c for c in self._house_cats
-            if c.age > 0 or any(
-                getattr(c, f"base_{s}") != 0 for s in STAT_ORDER
-            )
-        ]
+        self.team_synergy_updated.emit("")
+        available = [c for c in self._house_cats if c.age > 1]
         used_cats: set[int] = set()
         used_collars: set[str] = set()
 
@@ -259,12 +275,7 @@ class OverlayBridge(QObject):
             return
         self.llm_status_changed.emit("AI thinking...")
 
-        available = [
-            c for c in self._house_cats
-            if c.age > 0 or any(
-                getattr(c, f"base_{s}") != 0 for s in STAT_ORDER
-            )
-        ]
+        available = [c for c in self._house_cats if c.age > 1]
         base_scores: dict[int, list[tuple[CollarDef, float]]] = {}
         for cat in available:
             cs = save_cat_to_stats(cat)
@@ -273,7 +284,11 @@ class OverlayBridge(QObject):
             ]
 
         self._llm_worker = _LLMTeamWorker(
-            self._llm, available, self._available_collars, base_scores, self,
+            self._llm,
+            available,
+            self._available_collars,
+            base_scores,
+            self,
         )
         self._llm_worker.result_ready.connect(self._on_llm_team_result)
         self._llm_worker.start()
@@ -281,12 +296,39 @@ class OverlayBridge(QObject):
     @Slot()
     def request_close(self) -> None:
         from PySide6.QtWidgets import QApplication
+
         QApplication.quit()
+
+    # ── Window drag slots (called from JS title bar) ─────────────────
+
+    @Slot(int, int)
+    def begin_drag(self, screen_x: int, screen_y: int) -> None:
+        if self._shell is None:
+            return
+        self._drag_origin_x = screen_x
+        self._drag_origin_y = screen_y
+        pos = self._shell.pos()
+        self._drag_win_x = pos.x()
+        self._drag_win_y = pos.y()
+
+    @Slot(int, int)
+    def update_drag(self, screen_x: int, screen_y: int) -> None:
+        if self._shell is None:
+            return
+        dx = screen_x - self._drag_origin_x
+        dy = screen_y - self._drag_origin_y
+        self._shell.move(self._drag_win_x + dx, self._drag_win_y + dy)
+
+    @Slot()
+    def end_drag(self) -> None:
+        pass
 
     # ── Breeding slots ───────────────────────────────────────────────
 
     @Slot(int, int, int, result=str)
-    def get_breeding_advice(self, cat_a_key: int, cat_b_key: int, stimulation: int) -> str:
+    def get_breeding_advice(
+        self, cat_a_key: int, cat_b_key: int, stimulation: int
+    ) -> str:
         """Compute deterministic breeding probabilities for a pair."""
         cat_a = next((c for c in self._house_cats if c.db_key == cat_a_key), None)
         cat_b = next((c for c in self._house_cats if c.db_key == cat_b_key), None)
@@ -312,16 +354,24 @@ class OverlayBridge(QObject):
             collar = collar_by_name(collar_name)
             if collar and len(self._house_cats) >= 2:
                 rankings = rank_pairs_for_class(self._house_cats, collar, stimulation)
-            self.breeding_result.emit(json.dumps({
-                "source": "calculator",
-                "pairs": [asdict(r) for r in rankings],
-            }))
+            self.breeding_result.emit(
+                json.dumps(
+                    {
+                        "source": "calculator",
+                        "pairs": [asdict(r) for r in rankings],
+                    }
+                )
+            )
             return
 
         self.llm_status_changed.emit("AI analyzing breeding pairs...")
 
         self._llm_breed_worker = _LLMBreedWorker(
-            self._llm, self._house_cats, collar_name, stimulation, self,
+            self._llm,
+            self._house_cats,
+            collar_name,
+            stimulation,
+            self,
         )
         self._llm_breed_worker.result_ready.connect(self._on_llm_breed_result)
         self._llm_breed_worker.start()
@@ -348,11 +398,15 @@ class OverlayBridge(QObject):
         self.collars_updated.emit(
             json.dumps([_collar_dict(c) for c in self._available_collars])
         )
-        self.save_info_updated.emit(json.dumps({
-            "day": save_data.current_day,
-            "cat_count": len(self._house_cats),
-            "status": self._status,
-        }))
+        self.save_info_updated.emit(
+            json.dumps(
+                {
+                    "day": save_data.current_day,
+                    "cat_count": len(self._house_cats),
+                    "status": self._status,
+                }
+            )
+        )
         self._emit_team()
 
     # ── Internal helpers ────────────────────────────────────────────
@@ -363,11 +417,14 @@ class OverlayBridge(QObject):
             if slot is None:
                 result.append(None)
             else:
-                result.append({
+                d: dict[str, Any] = {
                     "cat": _cat_dict(slot["cat"]),
                     "collar_name": slot["collar"].name,
                     "score": round(slot["score"], 2),
-                })
+                }
+                if slot.get("explanation"):
+                    d["explanation"] = slot["explanation"]
+                result.append(d)
         return result
 
     def _emit_team(self) -> None:
@@ -381,21 +438,26 @@ class OverlayBridge(QObject):
         self._emit_team()
 
     @Slot(object)
-    def _on_llm_team_result(self, result: list[dict] | None) -> None:
+    def _on_llm_team_result(self, result: dict | None) -> None:
         self.llm_status_changed.emit("")
         if not result:
             self.autofill_team()
             return
 
+        team_entries = result.get("team", []) if isinstance(result, dict) else result
+        synergy = result.get("synergy", "") if isinstance(result, dict) else ""
+
         self._team_slots = [None, None, None, None]
         cat_by_key = {c.db_key: c for c in self._house_cats}
 
-        for slot_idx, entry in enumerate(result[:4]):
+        for slot_idx, entry in enumerate(team_entries[:4]):
             db_key = entry.get("cat_db_key")
             collar_name = entry.get("collar_name", "")
             cat = cat_by_key.get(db_key)
             collar = collar_by_name(collar_name)
             if cat is None or collar is None:
+                continue
+            if cat.age <= 1:
                 continue
             cs = save_cat_to_stats(cat)
             score = collar_score(collar, cs)
@@ -403,20 +465,30 @@ class OverlayBridge(QObject):
                 "cat": cat,
                 "collar": collar,
                 "score": score,
+                "explanation": entry.get("reason", ""),
             }
 
         self._emit_team()
+        self.team_synergy_updated.emit(synergy)
 
     @Slot(object)
     def _on_llm_breed_result(self, result: list[dict] | None) -> None:
         self.llm_status_changed.emit("")
         if result:
-            self.breeding_result.emit(json.dumps({
-                "source": "llm",
-                "pairs": result,
-            }))
+            self.breeding_result.emit(
+                json.dumps(
+                    {
+                        "source": "llm",
+                        "pairs": result,
+                    }
+                )
+            )
         else:
-            self.breeding_result.emit(json.dumps({
-                "source": "llm",
-                "pairs": [],
-            }))
+            self.breeding_result.emit(
+                json.dumps(
+                    {
+                        "source": "llm",
+                        "pairs": [],
+                    }
+                )
+            )

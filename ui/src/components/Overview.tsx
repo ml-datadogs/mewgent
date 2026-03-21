@@ -12,6 +12,7 @@ interface OverviewProps {
   roster: RosterEntry[];
   collars: CollarDef[];
   llmAvailable: boolean;
+  hideBreedTab?: boolean;
 }
 
 const tabVariants = {
@@ -20,7 +21,7 @@ const tabVariants = {
   exit: { opacity: 0, y: -8 },
 };
 
-export function Overview({ roster, collars, llmAvailable }: OverviewProps) {
+export function Overview({ roster, collars, llmAvailable, hideBreedTab }: OverviewProps) {
   const cats = roster.map((r) => r.cat);
 
   return (
@@ -36,7 +37,7 @@ export function Overview({ roster, collars, llmAvailable }: OverviewProps) {
             <TabsTrigger value="classes">Classes</TabsTrigger>
             <TabsTrigger value="top3">Top 3</TabsTrigger>
             <TabsTrigger value="avg">Avg</TabsTrigger>
-            <TabsTrigger value="breed">Breed</TabsTrigger>
+            {!hideBreedTab && <TabsTrigger value="breed">Breed</TabsTrigger>}
           </TabsList>
         </div>
 
@@ -107,21 +108,23 @@ export function Overview({ roster, collars, llmAvailable }: OverviewProps) {
                 </motion.div>
               </TabsContent>
 
-              <TabsContent value="breed" key="breed" forceMount={undefined}>
-                <motion.div
-                  variants={tabVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={{ duration: 0.2 }}
-                >
-                  {cats.length >= 2 ? (
-                    <BreedingPanel cats={cats} collars={collars} llmAvailable={llmAvailable} />
-                  ) : (
-                    <EmptyState />
-                  )}
-                </motion.div>
-              </TabsContent>
+              {!hideBreedTab && (
+                <TabsContent value="breed" key="breed" forceMount={undefined}>
+                  <motion.div
+                    variants={tabVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={{ duration: 0.2 }}
+                  >
+                    {cats.length >= 2 ? (
+                      <BreedingPanel cats={cats} collars={collars} llmAvailable={llmAvailable} />
+                    ) : (
+                      <EmptyState />
+                    )}
+                  </motion.div>
+                </TabsContent>
+              )}
             </AnimatePresence>
           </CardContent>
         </Card>

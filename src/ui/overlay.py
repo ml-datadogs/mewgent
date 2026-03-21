@@ -54,6 +54,7 @@ if _IS_WIN:
 
 HOTKEY_ID_TOGGLE = 1
 MOD_ALT = 0x0001
+MOD_NOREPEAT = 0x4000
 VK_M = 0x4D
 
 LOGO_PATH = str(PROJECT_ROOT / "images" / "mewgent-logo.jpg")
@@ -111,7 +112,8 @@ def _load_stat_icons(size: int = 14) -> dict[str, QPixmap]:
         if pix.isNull():
             continue
         icons[stat_key] = pix.scaled(
-            size, size,
+            size,
+            size,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
@@ -146,7 +148,8 @@ def _load_class_icons(size: int = 18) -> dict[str, QPixmap]:
         if pix.isNull():
             continue
         icons[collar_name] = pix.scaled(
-            size, size,
+            size,
+            size,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
@@ -154,6 +157,7 @@ def _load_class_icons(size: int = 18) -> dict[str, QPixmap]:
 
 
 # ── Win32-only hotkey thread ─────────────────────────────────────────
+
 
 class HotkeyThread(QThread):
     triggered = Signal()
@@ -167,7 +171,9 @@ class HotkeyThread(QThread):
             return
         user32 = ctypes.windll.user32
         self._thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
-        if not user32.RegisterHotKey(None, HOTKEY_ID_TOGGLE, MOD_ALT, VK_M):
+        if not user32.RegisterHotKey(
+            None, HOTKEY_ID_TOGGLE, MOD_ALT | MOD_NOREPEAT, VK_M
+        ):
             log.warning("Failed to register Alt+M hotkey")
             return
         log.info("Global hotkey registered: Alt+M")
@@ -185,6 +191,7 @@ class HotkeyThread(QThread):
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+
 def _make_separator() -> QLabel:
     sep = QLabel()
     sep.setFixedHeight(1)
@@ -201,6 +208,7 @@ def _detach(widget: QWidget | None) -> None:
 
 
 # ── Radar chart widget ───────────────────────────────────────────────
+
 
 class RadarChartWidget(QWidget):
     """Heptagonal spider/radar chart for 7 stats.
@@ -319,7 +327,9 @@ class RadarChartWidget(QWidget):
                 label = STAT_LABELS[i]
                 tw = fm.horizontalAdvance(label)
                 th = fm.height()
-                color = QColor(STAT_COLORS[STAT_ORDER[i]]) if val >= 7 else QColor(CLR_DIM)
+                color = (
+                    QColor(STAT_COLORS[STAT_ORDER[i]]) if val >= 7 else QColor(CLR_DIM)
+                )
                 p.setPen(color)
                 p.drawText(
                     QRectF(lbl_pt.x() - tw / 2, lbl_pt.y() - th / 2, tw, th),
@@ -331,6 +341,7 @@ class RadarChartWidget(QWidget):
 
 
 # ── Stat Distribution chart (page 1) ────────────────────────────────
+
 
 class StatDistributionWidget(QWidget):
     """Horizontal stacked bars showing low/mid/high cat counts per stat."""
@@ -423,6 +434,7 @@ class StatDistributionWidget(QWidget):
 
 # ── Class Fit chart (page 2) ────────────────────────────────────────
 
+
 class ClassFitWidget(QWidget):
     """Horizontal stacked bars showing good/ok/poor cat counts per class."""
 
@@ -476,11 +488,16 @@ class ClassFitWidget(QWidget):
             icon_x = 4
             icon = self._class_icons.get(collar.name)
             if icon:
-                p.drawPixmap(icon_x, int(y + (bar_h - 14) / 2), icon.scaled(
-                    14, 14,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                ))
+                p.drawPixmap(
+                    icon_x,
+                    int(y + (bar_h - 14) / 2),
+                    icon.scaled(
+                        14,
+                        14,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    ),
+                )
                 icon_x += 18
 
             p.setPen(base_color)
@@ -518,6 +535,7 @@ class ClassFitWidget(QWidget):
 
 # ── LLM worker threads ──────────────────────────────────────────────
 
+
 class _LLMTeamWorker(QThread):
     """Run LLM team suggestion off the main thread."""
 
@@ -541,7 +559,9 @@ class _LLMTeamWorker(QThread):
             cs = save_cat_to_stats(cat)
             base_scores[cat.db_key] = [(c, collar_score(c, cs)) for c in self._collars]
         result = self._advisor.suggest_team_composition(
-            self._cats, self._collars, base_scores,
+            self._cats,
+            self._collars,
+            base_scores,
         )
         self.finished.emit(result)
 
@@ -569,7 +589,9 @@ class _LLMExplainWorker(QThread):
 
     def run(self) -> None:
         explanation = self._advisor.explain_recommendation(
-            self._cat, self._collar, self._score,
+            self._cat,
+            self._collar,
+            self._score,
         )
         self.finished.emit(
             self._slot_idx,
@@ -579,6 +601,7 @@ class _LLMExplainWorker(QThread):
 
 
 # ── Main overlay window ──────────────────────────────────────────────
+
 
 class MewgentOverlay(QMainWindow):
     """Always-on-top overlay for team building from save file data."""
@@ -680,11 +703,14 @@ class MewgentOverlay(QMainWindow):
         logo_label = QLabel()
         pix = QPixmap(LOGO_PATH)
         if not pix.isNull():
-            logo_label.setPixmap(pix.scaled(
-                20, 20,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            ))
+            logo_label.setPixmap(
+                pix.scaled(
+                    20,
+                    20,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
         row.addWidget(logo_label)
 
         title = QLabel("Mewgent")
@@ -699,7 +725,7 @@ class MewgentOverlay(QMainWindow):
         row.addWidget(self._info_label)
 
         if _IS_WIN:
-            hotkey_hint = QLabel("Alt+M")
+            hotkey_hint = QLabel("Ctrl+Shift+M")
             hotkey_hint.setFont(QFont(FONT_MONO, 7))
             hotkey_hint.setStyleSheet(
                 f"color: {CLR_DIM}; background: {CLR_BG_DIM}; "
@@ -830,18 +856,22 @@ class MewgentOverlay(QMainWindow):
             """)
             remove_btn.setVisible(False)
             slot_idx = i
-            remove_btn.clicked.connect(lambda _checked=False, idx=slot_idx: self._remove_team_slot(idx))
+            remove_btn.clicked.connect(
+                lambda _checked=False, idx=slot_idx: self._remove_team_slot(idx)
+            )
             slot_lay.addWidget(remove_btn)
 
-            self._team_slot_widgets.append({
-                "widget": slot_w,
-                "name": slot_name,
-                "combo": slot_class_combo,
-                "score": slot_score,
-                "remove": remove_btn,
-                "radar": radar_placeholder,
-                "layout": slot_lay,
-            })
+            self._team_slot_widgets.append(
+                {
+                    "widget": slot_w,
+                    "name": slot_name,
+                    "combo": slot_class_combo,
+                    "score": slot_score,
+                    "remove": remove_btn,
+                    "radar": radar_placeholder,
+                    "layout": slot_lay,
+                }
+            )
             card_lay.addWidget(slot_w)
 
         btn_row = QHBoxLayout()
@@ -921,7 +951,9 @@ class MewgentOverlay(QMainWindow):
             btn.setFixedHeight(22)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             tab_idx = idx
-            btn.clicked.connect(lambda _c=False, i=tab_idx: self._switch_overview_page(i))
+            btn.clicked.connect(
+                lambda _c=False, i=tab_idx: self._switch_overview_page(i)
+            )
             self._tab_buttons.append(btn)
             header.addWidget(btn)
 
@@ -1051,11 +1083,14 @@ class MewgentOverlay(QMainWindow):
             icon_pix = self._class_icons.get(collar.name)
             if icon_pix:
                 icon_lbl = QLabel()
-                icon_lbl.setPixmap(icon_pix.scaled(
-                    16, 16,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                ))
+                icon_lbl.setPixmap(
+                    icon_pix.scaled(
+                        16,
+                        16,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
                 icon_lbl.setFixedSize(16, 16)
                 row_lay.addWidget(icon_lbl)
 
@@ -1093,7 +1128,9 @@ class MewgentOverlay(QMainWindow):
                 collar_ref = collar
                 sc_ref = sc
                 name_btn.clicked.connect(
-                    lambda _c=False, ca=cat_ref, co=collar_ref, s=sc_ref: self._add_to_team(ca, co, s)
+                    lambda _c=False, ca=cat_ref, co=collar_ref, s=sc_ref: (
+                        self._add_to_team(ca, co, s)
+                    )
                 )
                 info_lay.addWidget(name_btn)
 
@@ -1179,7 +1216,7 @@ class MewgentOverlay(QMainWindow):
 
     def _setup_tray(self) -> None:
         self._tray = QSystemTrayIcon(self._logo_icon, self)
-        self._tray.setToolTip("Mewgent \u2014 Alt+M to toggle")
+        self._tray.setToolTip("Mewgent \u2014 Ctrl+Shift+M to toggle")
 
         menu = QMenu()
         show_action = QAction("Show", self)
@@ -1372,13 +1409,7 @@ class MewgentOverlay(QMainWindow):
             return
 
         self._team_slots = [None, None, None, None]
-        available_cats = [
-            c for c in self._house_cats
-            if c.age > 0 or any(
-                getattr(c, f"base_{s}") != 0
-                for s in ("str", "dex", "con", "int", "spd", "cha", "lck")
-            )
-        ]
+        available_cats = [c for c in self._house_cats if c.age > 1]
         used_cat_keys: set[int] = set()
         used_collar_names: set[str] = set()
 
@@ -1413,17 +1444,15 @@ class MewgentOverlay(QMainWindow):
 
     def _autofill_team_llm(self) -> None:
         """Use LLM to suggest a balanced team composition."""
-        if not self._llm.available or not self._house_cats or not self._available_collars:
+        if (
+            not self._llm.available
+            or not self._house_cats
+            or not self._available_collars
+        ):
             self._autofill_team()
             return
 
-        available_cats = [
-            c for c in self._house_cats
-            if c.age > 0 or any(
-                getattr(c, f"base_{s}") != 0
-                for s in ("str", "dex", "con", "int", "spd", "cha", "lck")
-            )
-        ]
+        available_cats = [c for c in self._house_cats if c.age > 1]
         if len(available_cats) < 2:
             self._autofill_team()
             return
@@ -1432,7 +1461,10 @@ class MewgentOverlay(QMainWindow):
         self._llm_status_label.setText("AI thinking...")
 
         self._llm_worker = _LLMTeamWorker(
-            self._llm, available_cats, self._available_collars, self,
+            self._llm,
+            available_cats,
+            self._available_collars,
+            self,
         )
         self._llm_worker.finished.connect(self._on_llm_team_result)
         self._llm_worker.start()
@@ -1454,6 +1486,8 @@ class MewgentOverlay(QMainWindow):
             cat = cat_by_key.get(db_key)
             collar = collar_by_name(collar_name)
             if cat is None or collar is None:
+                continue
+            if cat.age <= 1:
                 continue
             cs = save_cat_to_stats(cat)
             score = collar_score(collar, cs)
@@ -1489,13 +1523,20 @@ class MewgentOverlay(QMainWindow):
                 continue
 
             worker = _LLMExplainWorker(
-                self._llm, cat, collar, score, i, self,
+                self._llm,
+                cat,
+                collar,
+                score,
+                i,
+                self,
             )
             worker.finished.connect(self._on_explanation_result)
             self._llm_explain_workers.append(worker)
             worker.start()
 
-    def _on_explanation_result(self, slot_idx: int, collar_name: str, explanation: str) -> None:
+    def _on_explanation_result(
+        self, slot_idx: int, collar_name: str, explanation: str
+    ) -> None:
         if slot_idx < len(self._team_slot_widgets) and explanation:
             slot = self._team_slots[slot_idx]
             if slot is not None and slot["collar"].name == collar_name:
@@ -1509,7 +1550,13 @@ class MewgentOverlay(QMainWindow):
         try:
             hwnd = int(self.winId())
             ctypes.windll.user32.SetWindowPos(
-                hwnd, -1, 0, 0, 0, 0, 0x0002 | 0x0001 | 0x0010,
+                hwnd,
+                -1,
+                0,
+                0,
+                0,
+                0,
+                0x0002 | 0x0001 | 0x0010,
             )
         except Exception:
             pass
@@ -1525,7 +1572,9 @@ class MewgentOverlay(QMainWindow):
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._drag_pos = (
+                event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            )
             event.accept()
 
     def mouseMoveEvent(self, event) -> None:
