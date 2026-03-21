@@ -52,6 +52,12 @@ tasks:
     cmds:
       - uv run pyinstaller mewgent.spec --noconfirm
 
+  dev:
+    desc: Build UI and launch overlay in dev mode with mock data
+    cmds:
+      - task: build:ui
+      - uv run python -m src.main --dev-ui
+
   build:
     desc: Full build (UI + executable)
     cmds:
