@@ -864,7 +864,133 @@ def read_save(path: str | Path) -> SaveData:
         result.current_day,
         len(result.unlocked_classes),
     )
+    _dump_save_debug(result)
     return result
+
+
+def _dump_save_debug(save: SaveData) -> None:
+    """Emit a comprehensive DEBUG log of all parsed save data."""
+    if not log.isEnabledFor(logging.DEBUG):
+        return
+
+    sep = "-" * 120
+
+    lines: list[str] = [
+        "",
+        sep,
+        "SAVE DATA DEBUG DUMP",
+        sep,
+        f"  Save file : {save.save_path}",
+        f"  Day       : {save.current_day}",
+        f"  Gold      : {save.house_gold}",
+        f"  Food      : {save.house_food}",
+        f"  Steam ID  : {save.owner_steamid}",
+        f"  Total cats: {len(save.cats)}",
+        f"  Rooms     : {save.unlocked_rooms}",
+        f"  Classes   : {save.unlocked_classes}",
+        f"  Abilities : {len(save.unlocked_abilities)} unlocked",
+        f"  Passives  : {len(save.unlocked_passives)} unlocked",
+        f"  Adventure : keys {save.adventure_keys or 'none'}",
+        "",
+    ]
+
+    by_status: dict[str, list[SaveCat]] = {}
+    for c in save.cats:
+        by_status.setdefault(c.status, []).append(c)
+
+    lines.append(
+        f"  Status breakdown: "
+        + ", ".join(f"{s}={len(cats)}" for s, cats in sorted(by_status.items()))
+    )
+    lines.append("")
+
+    # ── House cats (full detail) ──────────────────────────────────────
+    house = save.house_cats
+    retired_count = sum(1 for c in house if c.retired)
+    lines.append(f"  HOUSE CATS ({len(house)} total, {retired_count} retired)")
+    lines.append(sep)
+    header = (
+        f"  {'Key':>4} {'Name':22s} {'Age':>3} {'Gen':>3} {'Gnd':>4} "
+        f"{'Class':12s} {'Room':18s} {'Ret':>3} "
+        f"{'STR':>4} {'DEX':>4} {'CON':>4} {'INT':>4} {'SPD':>4} {'CHA':>4} {'LCK':>4}  "
+        f"{'Breed':>5}  Abilities / Passives / Disorders"
+    )
+    lines.append(header)
+    lines.append("  " + "-" * (len(header) - 2))
+
+    for c in house:
+        room = ROOM_DISPLAY.get(c.room, c.room) or "(none)"
+        ret_flag = "YES" if c.retired else ""
+        abilities = ", ".join(c.abilities) if c.abilities else "-"
+        passives = ", ".join(c.passives) if c.passives else "-"
+        disorders = ", ".join(c.disorders) if c.disorders else "-"
+        lines.append(
+            f"  {c.db_key:4d} {c.name:22s} {c.age:3d} {c.generation:3d} {c.gender:>4s} "
+            f"{c.active_class or '-':12s} {room:18s} {ret_flag:>3s} "
+            f"{c.base_str:4d} {c.base_dex:4d} {c.base_con:4d} {c.base_int:4d} "
+            f"{c.base_spd:4d} {c.base_cha:4d} {c.base_lck:4d}  "
+            f"{c.breed_coefficient:5.3f}  A: {abilities}"
+        )
+        lines.append(
+            f"  {'':4s} {'':22s} {'':3s} {'':3s} {'':4s} "
+            f"{'':12s} {'':18s} {'':3s} "
+            f"{'':4s} {'':4s} {'':4s} {'':4s} {'':4s} {'':4s} {'':4s}  "
+            f"{'':5s}  P: {passives}  D: {disorders}"
+        )
+        extras: list[str] = []
+        if c.aggression is not None:
+            extras.append(f"aggr={c.aggression:.2f}")
+        if c.libido is not None:
+            extras.append(f"libido={c.libido:.2f}")
+        if c.inbredness is not None:
+            extras.append(f"inbred={c.inbredness:.2f}")
+        if c.collar:
+            extras.append(f"collar={c.collar}")
+        if c.lover_keys:
+            extras.append(f"lovers={c.lover_keys}")
+        if c.hater_keys:
+            extras.append(f"haters={c.hater_keys}")
+        if c.parent_a_key or c.parent_b_key:
+            extras.append(f"parents=[{c.parent_a_key},{c.parent_b_key}]")
+        if c.children_keys:
+            extras.append(f"children={c.children_keys}")
+        if extras:
+            lines.append(
+                f"  {'':4s} {'':22s} {'':3s} {'':3s} {'':4s} "
+                f"{'':12s} {'':18s} {'':3s} "
+                f"{'':4s} {'':4s} {'':4s} {'':4s} {'':4s} {'':4s} {'':4s}  "
+                f"{'':5s}  {' | '.join(extras)}"
+            )
+
+    lines.append("")
+
+    # ── Historical / adventure cats (compact) ─────────────────────────
+    for status_label in ("adventure", "historical"):
+        group = by_status.get(status_label, [])
+        if not group:
+            continue
+        lines.append(f"  {status_label.upper()} CATS ({len(group)})")
+        lines.append(
+            f"  {'Key':>4} {'Name':22s} {'Age':>3} {'Gen':>3} {'Gnd':>4} "
+            f"{'STR':>4} {'DEX':>4} {'CON':>4} {'INT':>4} {'SPD':>4} {'CHA':>4} {'LCK':>4}"
+        )
+        for c in group[:30]:
+            lines.append(
+                f"  {c.db_key:4d} {c.name:22s} {c.age:3d} {c.generation:3d} {c.gender:>4s} "
+                f"{c.base_str:4d} {c.base_dex:4d} {c.base_con:4d} {c.base_int:4d} "
+                f"{c.base_spd:4d} {c.base_cha:4d} {c.base_lck:4d}"
+            )
+        if len(group) > 30:
+            lines.append(f"  ... and {len(group) - 30} more")
+        lines.append("")
+
+    dead_count = len(by_status.get("dead", []))
+    if dead_count:
+        lines.append(f"  DEAD CATS: {dead_count} (not listed)")
+
+    lines.append(sep)
+
+    log.debug("\n".join(lines))
 
 
 def _resolve_relationships(
