@@ -18,7 +18,7 @@ const pageVariants = {
 };
 
 export default function App() {
-  const { connected, uiPreview, roster, collars, team, teamSynergy, saveInfo, llmStatus, updateInfo } =
+  const { connected, uiPreview, roster, collars, team, teamSynergy, saveInfo, llmStatus, updateInfo, roomStats } =
     useBridge();
   const showAiControls = connected || uiPreview;
   const [mode, setMode] = useState<'home' | AppMode>('home');
@@ -55,19 +55,15 @@ export default function App() {
         )}
 
         {mode === 'breeding' && (
-          <div
-            className="h-full w-full rounded-lg border-2 border-border bg-paper flex flex-col overflow-hidden"
-            style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}
-          >
+          <div className="h-full w-full flex flex-col overflow-hidden">
             <div className="flex flex-col gap-1.5 p-3 flex-1 overflow-hidden">
               <TitleBar
                 day={saveInfo.day}
                 catCount={saveInfo.cat_count}
                 connected={connected}
                 onBack={goHome}
+                borderless
               />
-
-              <div className="h-px bg-border shrink-0" />
 
               {updateInfo && <UpdateBanner info={updateInfo} />}
 
@@ -81,24 +77,22 @@ export default function App() {
                 className="flex-1 min-h-0 overflow-auto"
               >
                 <ScrollArea className="h-full">
-                  <div className="pr-1">
-                    {cats.length >= 2 ? (
-                      <BreedingPanel
-                        cats={cats}
-                        collars={collars}
-                        llmAvailable={showAiControls}
-                        bridgeConnected={connected}
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-[200px] text-text-dim text-xs">
+                  {cats.length >= 2 ? (
+                    <BreedingPanel
+                      cats={cats}
+                      roomStats={roomStats}
+                      llmAvailable={showAiControls}
+                      bridgeConnected={connected}
+                    />
+                  ) : (
+                    <div className="parchment-empty rounded-lg flex items-center justify-center h-[200px]">
+                      <span className="text-[10px] font-mono font-bold text-text-dim tracking-wider opacity-50">
                         Need at least 2 cats to analyze breeding
-                      </div>
-                    )}
-                  </div>
+                      </span>
+                    </div>
+                  )}
                 </ScrollArea>
               </motion.div>
-
-              <div className="h-px bg-border shrink-0" />
 
               <StatusBar status={saveInfo.status} />
             </div>

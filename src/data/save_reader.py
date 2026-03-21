@@ -222,6 +222,19 @@ class SaveCat:
 
 
 @dataclass
+class RoomStats:
+    """Aggregated house stats for a single room, derived from furniture."""
+
+    appeal: int = 0
+    comfort: int = 0
+    stimulation: int = 0
+    health: int = 0
+    mutation: int = 0
+    cat_count: int = 0
+    furniture_count: int = 0
+
+
+@dataclass
 class SaveData:
     """All data read from a Mewgenics save file."""
 
@@ -240,6 +253,7 @@ class SaveData:
     adventure_keys: set[int] = field(default_factory=set)
     unlocked_rooms: list[str] = field(default_factory=list)
     pedigree: dict[int, tuple[int | None, int | None]] = field(default_factory=dict)
+    room_stats: dict[str, RoomStats] = field(default_factory=dict)
 
     @property
     def house_cats(self) -> list[SaveCat]:
@@ -710,6 +724,80 @@ def _get_unlocked_house_rooms(cursor: sqlite3.Cursor) -> list[str]:
     return [room for room in ROOM_KEYS if room in unlocked]
 
 
+def _count_cats_per_room(room_assignments: dict[int, str]) -> dict[str, int]:
+    """Count how many cats are assigned to each room."""
+    counts: dict[str, int] = {}
+    for room in room_assignments.values():
+        counts[room] = counts.get(room, 0) + 1
+    return counts
+
+
+def _parse_furniture(cursor: sqlite3.Cursor) -> dict[str, RoomStats]:
+    """Parse furniture table to extract per-room house stats.
+
+    Each furniture blob contains the item name, assigned room, and 5 stat
+    values (Appeal, Comfort, Stimulation, Health, Mutation) packed as i32
+    in the last 20 bytes.
+
+    The blob layout is:
+      u32 version (1)
+      u32 name_len, u32 pad
+      name bytes (ASCII)
+      u32 room_len, u32 pad
+      room bytes (ASCII)
+      ... positioning / transform data ...
+      last 20 bytes: 5 x i32 house stat contributions
+    """
+    room_totals: dict[str, RoomStats] = {}
+    try:
+        rows = cursor.execute("SELECT key, data FROM furniture").fetchall()
+    except sqlite3.Error:
+        log.warning("Failed to read furniture table")
+        return room_totals
+
+    for _key, blob in rows:
+        if not blob or len(blob) < 28:
+            continue
+        try:
+            r = _BinaryReader(blob)
+            r.u32()  # version
+            name_len = r.u32()
+            r.u32()  # pad
+            if name_len > 200 or r.pos + name_len > len(blob):
+                continue
+            _furniture_name = blob[r.pos : r.pos + name_len].decode(
+                "ascii", errors="ignore"
+            )
+            r.skip(name_len)
+
+            room_len = r.u32()
+            r.u32()  # pad
+            if room_len > 100 or r.pos + room_len > len(blob):
+                continue
+            room_name = blob[r.pos : r.pos + room_len].decode("ascii", errors="ignore")
+
+            if len(blob) < 20:
+                continue
+            stats_offset = len(blob) - 20
+            vals = struct.unpack_from("<5i", blob, stats_offset)
+
+            rs = room_totals.get(room_name)
+            if rs is None:
+                rs = RoomStats()
+                room_totals[room_name] = rs
+            rs.appeal += vals[0]
+            rs.comfort += vals[1]
+            rs.stimulation += vals[2]
+            rs.health += vals[3]
+            rs.mutation += vals[4]
+            rs.furniture_count += 1
+        except Exception:
+            log.debug("Failed to parse furniture #%s", _key, exc_info=True)
+
+    log.debug("furniture: %d rooms with stats", len(room_totals))
+    return room_totals
+
+
 def _parse_unlocks(
     cursor: sqlite3.Cursor,
 ) -> tuple[list[str], list[str], list[str]]:
@@ -819,6 +907,16 @@ def read_save(path: str | Path) -> SaveData:
         result.unlocked_abilities = abilities
         result.unlocked_passives = passives
 
+        # ── Furniture / room stats ────────────────────────────────────
+        room_stats = _parse_furniture(cursor)
+        for room_name, count in _count_cats_per_room(room_assignments).items():
+            rs = room_stats.get(room_name)
+            if rs is None:
+                rs = RoomStats()
+                room_stats[room_name] = rs
+            rs.cat_count = count
+        result.room_stats = room_stats
+
         # ── Cats ──────────────────────────────────────────────────────
         try:
             for db_key, blob in cursor.execute(
@@ -897,6 +995,17 @@ def _dump_save_debug(save: SaveData) -> None:
         f"  Adventure : keys {save.adventure_keys or 'none'}",
         "",
     ]
+
+    if save.room_stats:
+        lines.append("  ROOM STATS (from furniture)")
+        for room_name, rs in sorted(save.room_stats.items()):
+            display = ROOM_DISPLAY.get(room_name, room_name)
+            lines.append(
+                f"    {display:24s}  Appeal={rs.appeal:4d}  Comfort={rs.comfort:4d}"
+                f"  Stim={rs.stimulation:4d}  Health={rs.health:4d}"
+                f"  Mutation={rs.mutation:4d}  cats={rs.cat_count}  furniture={rs.furniture_count}"
+            )
+        lines.append("")
 
     by_status: dict[str, list[SaveCat]] = {}
     for c in save.cats:

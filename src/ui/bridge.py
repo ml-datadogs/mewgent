@@ -14,7 +14,12 @@ from typing import Any
 from PySide6.QtCore import QObject, QThread, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 
-from src.breeding.calculator import analyze_pair, rank_pairs_for_class
+from src.breeding.calculator import (
+    analyze_pair,
+    rank_pairs_for_class,
+    rank_pairs_overall,
+    suggest_room_distribution,
+)
 from src.data.collars import (
     COLLARS,
     CollarDef,
@@ -23,7 +28,7 @@ from src.data.collars import (
     save_cat_to_stats,
     unlocked_collars,
 )
-from src.data.save_reader import SaveCat, SaveData
+from src.data.save_reader import RoomStats, SaveCat, SaveData
 from src.llm.advisor import LLMAdvisor
 from src.utils.config_loader import AppConfig
 
@@ -52,6 +57,18 @@ def _cat_dict(cat: SaveCat) -> dict[str, Any]:
         "status": cat.status,
         "breed_coefficient": round(cat.breed_coefficient, 4),
         "retired": cat.retired,
+        "aggression": round(cat.aggression, 3) if cat.aggression is not None else None,
+        "libido": round(cat.libido, 3) if cat.libido is not None else None,
+        "inbredness": round(cat.inbredness, 3) if cat.inbredness is not None else None,
+        "disorders": cat.disorders,
+        "visual_mutation_ids": cat.visual_mutation_ids,
+        "parent_a_key": cat.parent_a_key,
+        "parent_b_key": cat.parent_b_key,
+        "children_keys": cat.children_keys,
+        "lover_keys": cat.lover_keys,
+        "hater_keys": cat.hater_keys,
+        "generation": cat.generation,
+        "room": cat.room,
     }
 
 
@@ -137,6 +154,29 @@ class _LLMBreedWorker(QThread):
             self.result_ready.emit(None)
 
 
+class _LLMDistributionWorker(QThread):
+    """Run LLM room distribution suggestion off the main thread."""
+
+    result_ready = Signal(object)
+
+    def __init__(self, advisor, cats, room_stats, parent=None):
+        super().__init__(parent)
+        self._advisor = advisor
+        self._cats = cats
+        self._room_stats = room_stats
+
+    def run(self):
+        try:
+            result = self._advisor.suggest_room_distribution(
+                self._cats,
+                self._room_stats,
+            )
+            self.result_ready.emit(result)
+        except Exception:
+            log.exception("LLM distribution worker failed")
+            self.result_ready.emit(None)
+
+
 class OverlayBridge(QObject):
     """QObject exposed to JavaScript via QWebChannel."""
 
@@ -147,6 +187,8 @@ class OverlayBridge(QObject):
     llm_status_changed = Signal(str)
     collars_updated = Signal(str)
     breeding_result = Signal(str)
+    distribution_result = Signal(str)
+    room_stats_updated = Signal(str)
     update_available = Signal(str)
     update_check_status = Signal(str)
 
@@ -166,6 +208,7 @@ class OverlayBridge(QObject):
         self._drag_win_x: int = 0
         self._drag_win_y: int = 0
         self._update_check_worker: QThread | None = None
+        self._room_stats: dict[str, RoomStats] = {}
 
         self._llm = LLMAdvisor(
             model=cfg.llm.model,
@@ -205,6 +248,10 @@ class OverlayBridge(QObject):
                 "status": self._status,
             }
         )
+
+    @Slot(result=str)
+    def get_room_stats(self) -> str:
+        return json.dumps(self._room_stats_json())
 
     @Slot(int, int, str)
     def set_team_slot(self, slot: int, cat_db_key: int, collar_name: str) -> None:
@@ -322,7 +369,10 @@ class OverlayBridge(QObject):
         if not url:
             self.update_check_status.emit(json.dumps({"state": "disabled"}))
             return
-        if self._update_check_worker is not None and self._update_check_worker.isRunning():
+        if (
+            self._update_check_worker is not None
+            and self._update_check_worker.isRunning()
+        ):
             return
         self.update_check_status.emit(json.dumps({"state": "checking"}))
         worker = ManualUpdateCheckWorker(url, self)
@@ -385,7 +435,12 @@ class OverlayBridge(QObject):
         cat_b = next((c for c in self._house_cats if c.db_key == cat_b_key), None)
         if cat_a is None or cat_b is None:
             return json.dumps(None)
-        advice = analyze_pair(cat_a, cat_b, stimulation)
+
+        pair_room = None
+        if cat_a.room and cat_a.room == cat_b.room:
+            pair_room = self._room_stats.get(cat_a.room)
+
+        advice = analyze_pair(cat_a, cat_b, stimulation, room_stats=pair_room)
         return json.dumps(asdict(advice))
 
     @Slot(str, int, result=str)
@@ -394,7 +449,9 @@ class OverlayBridge(QObject):
         collar = collar_by_name(collar_name)
         if collar is None or len(self._house_cats) < 2:
             return json.dumps([])
-        rankings = rank_pairs_for_class(self._house_cats, collar, stimulation)
+        rankings = rank_pairs_for_class(
+            self._house_cats, collar, stimulation, room_stats=self._room_stats
+        )
         return json.dumps([asdict(r) for r in rankings])
 
     @Slot(str, int)
@@ -404,7 +461,9 @@ class OverlayBridge(QObject):
             rankings = []
             collar = collar_by_name(collar_name)
             if collar and len(self._house_cats) >= 2:
-                rankings = rank_pairs_for_class(self._house_cats, collar, stimulation)
+                rankings = rank_pairs_for_class(
+                    self._house_cats, collar, stimulation, room_stats=self._room_stats
+                )
             self.breeding_result.emit(
                 json.dumps(
                     {
@@ -427,6 +486,49 @@ class OverlayBridge(QObject):
         self._llm_breed_worker.result_ready.connect(self._on_llm_breed_result)
         self._llm_breed_worker.start()
 
+    @Slot(result=str)
+    def get_room_distribution(self) -> str:
+        """Compute deterministic room distribution for optimal breeding."""
+        if len(self._house_cats) < 2 or not self._room_stats:
+            return json.dumps(None)
+        dist = suggest_room_distribution(self._house_cats, self._room_stats)
+        return json.dumps(asdict(dist))
+
+    @Slot(result=str)
+    def get_overall_rankings(self) -> str:
+        """Rank all cat pairs by total expected stats (class-agnostic)."""
+        if len(self._house_cats) < 2:
+            return json.dumps([])
+        rankings = rank_pairs_overall(self._house_cats, room_stats=self._room_stats)
+        return json.dumps([asdict(r) for r in rankings])
+
+    @Slot()
+    def suggest_distribution_llm(self) -> None:
+        """Request LLM-powered room distribution (async)."""
+        if not self._llm.available or len(self._house_cats) < 2:
+            dist = None
+            if self._house_cats and self._room_stats:
+                dist = suggest_room_distribution(self._house_cats, self._room_stats)
+            self.distribution_result.emit(
+                json.dumps(
+                    {
+                        "source": "calculator",
+                        "distribution": asdict(dist) if dist else None,
+                    }
+                )
+            )
+            return
+
+        self.llm_status_changed.emit("AI optimizing room distribution...")
+        self._llm_dist_worker = _LLMDistributionWorker(
+            self._llm,
+            self._house_cats,
+            self._room_stats,
+            self,
+        )
+        self._llm_dist_worker.result_ready.connect(self._on_llm_distribution_result)
+        self._llm_dist_worker.start()
+
     # ── Save data handling (called from overlay shell) ──────────────
 
     def on_save_updated(self, save_data: SaveData) -> None:
@@ -438,6 +540,7 @@ class OverlayBridge(QObject):
         self._llm.clear_cache()
 
         self._viable = _compute_viable(self._house_cats, self._available_collars)
+        self._room_stats = save_data.room_stats
         self._refresh_team_scores()
 
         self._status = (
@@ -459,6 +562,7 @@ class OverlayBridge(QObject):
             )
         )
         self._emit_team()
+        self.room_stats_updated.emit(json.dumps(self._room_stats_json()))
 
     # ── Internal helpers ────────────────────────────────────────────
 
@@ -480,6 +584,20 @@ class OverlayBridge(QObject):
 
     def _emit_team(self) -> None:
         self.team_updated.emit(json.dumps(self._team_to_json()))
+
+    def _room_stats_json(self) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for room_name, rs in self._room_stats.items():
+            result[room_name] = {
+                "appeal": rs.appeal,
+                "comfort": rs.comfort,
+                "stimulation": rs.stimulation,
+                "health": rs.health,
+                "mutation": rs.mutation,
+                "cat_count": rs.cat_count,
+                "furniture_count": rs.furniture_count,
+            }
+        return result
 
     def _refresh_team_scores(self) -> None:
         for slot in self._team_slots:
@@ -540,6 +658,26 @@ class OverlayBridge(QObject):
                     {
                         "source": "llm",
                         "pairs": [],
+                    }
+                )
+            )
+
+    @Slot(object)
+    def _on_llm_distribution_result(self, result: dict | None) -> None:
+        self.llm_status_changed.emit("")
+        if result and isinstance(result, dict):
+            self.distribution_result.emit(
+                json.dumps({"source": "llm", "distribution": result})
+            )
+        else:
+            dist = None
+            if self._house_cats and self._room_stats:
+                dist = suggest_room_distribution(self._house_cats, self._room_stats)
+            self.distribution_result.emit(
+                json.dumps(
+                    {
+                        "source": "calculator",
+                        "distribution": asdict(dist) if dist else None,
                     }
                 )
             )

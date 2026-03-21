@@ -1,7 +1,7 @@
 /**
  * Sample data for Vite-only dev (no QWebChannel). Matches shapes from the Python bridge.
  */
-import type { CollarDef, RosterEntry, TeamSlot } from '@/types';
+import type { CollarDef, RoomStats, RosterEntry, TeamSlot } from '@/types';
 
 const MOCK_COLLARS: CollarDef[] = [
   {
@@ -36,6 +36,7 @@ function mockCat(
   active_class: string,
   age: number,
   stats: [number, number, number, number, number, number, number],
+  room = 'Floor1_Large',
 ): RosterEntry['cat'] {
   return {
     db_key,
@@ -53,18 +54,30 @@ function mockCat(
     base_lck: stats[6],
     abilities: ['Fireball', 'HealingTouch'],
     passives: ['NineLives'],
-    status: 'OK',
+    status: 'in_house',
     breed_coefficient: 0.12,
     retired: false,
+    aggression: 0.3,
+    libido: 0.6,
+    inbredness: 0.05,
+    disorders: [],
+    visual_mutation_ids: [],
+    parent_a_key: 0,
+    parent_b_key: 0,
+    children_keys: [],
+    lover_keys: [],
+    hater_keys: [],
+    generation: db_key <= 2 ? 0 : 1,
+    room,
   };
 }
 
 const cats: RosterEntry['cat'][] = [
-  mockCat(1, 'Mittens', 'Mage', 4, [3, 2, 4, 9, 5, 8, 4]),
-  mockCat(2, 'Whiskers', 'Fighter', 5, [8, 5, 7, 2, 6, 3, 3]),
-  mockCat(3, 'Chairman Meow', 'Hunter', 3, [4, 9, 3, 3, 4, 2, 8]),
-  mockCat(4, 'Purrlock', 'Cleric', 6, [2, 3, 6, 5, 3, 9, 5]),
-  mockCat(5, 'Noodle', 'Fighter', 2, [7, 6, 5, 4, 7, 4, 5]),
+  mockCat(1, 'Mittens', 'Mage', 4, [3, 2, 4, 9, 5, 8, 4], 'Floor1_Large'),
+  mockCat(2, 'Whiskers', 'Fighter', 5, [8, 5, 7, 2, 6, 3, 3], 'Floor1_Large'),
+  mockCat(3, 'Chairman Meow', 'Hunter', 3, [4, 9, 3, 3, 4, 2, 8], 'Attic'),
+  mockCat(4, 'Purrlock', 'Cleric', 6, [2, 3, 6, 5, 3, 9, 5], 'Floor1_Large'),
+  mockCat(5, 'Noodle', 'Fighter', 2, [7, 6, 5, 4, 7, 4, 5], 'Attic'),
 ];
 
 function scoresFor(cat: RosterEntry['cat']): number[] {
@@ -131,4 +144,25 @@ export const STANDALONE_SAVE_INFO = {
   day: 42,
   cat_count: cats.length,
   status: 'Browser preview — open via Mewgent for real save + AI',
+};
+
+export const STANDALONE_ROOM_STATS: Record<string, RoomStats> = {
+  Floor1_Large: {
+    appeal: 12,
+    comfort: 8,
+    stimulation: 45,
+    health: 6,
+    mutation: 3,
+    cat_count: 3,
+    furniture_count: 18,
+  },
+  Attic: {
+    appeal: 4,
+    comfort: 14,
+    stimulation: 98,
+    health: 3,
+    mutation: 1,
+    cat_count: 2,
+    furniture_count: 12,
+  },
 };

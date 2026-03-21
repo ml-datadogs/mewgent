@@ -17,6 +17,28 @@ export interface SaveCat {
   status: string;
   breed_coefficient: number;
   retired: boolean;
+  aggression: number | null;
+  libido: number | null;
+  inbredness: number | null;
+  disorders: string[];
+  visual_mutation_ids: number[];
+  parent_a_key: number;
+  parent_b_key: number;
+  children_keys: number[];
+  lover_keys: number[];
+  hater_keys: number[];
+  generation: number;
+  room: string;
+}
+
+export interface RoomStats {
+  appeal: number;
+  comfort: number;
+  stimulation: number;
+  health: number;
+  mutation: number;
+  cat_count: number;
+  furniture_count: number;
 }
 
 export interface SaveData {

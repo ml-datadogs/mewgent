@@ -1,4 +1,4 @@
-import type { CollarDef, TeamSlot, RosterEntry } from './types';
+import type { CollarDef, TeamSlot, RosterEntry, RoomStats } from './types';
 
 declare global {
   interface Window {
@@ -27,6 +27,10 @@ interface BridgeObject {
   get_breeding_advice: (cat_a_key: number, cat_b_key: number, stimulation: number, cb: (json: string) => void) => void;
   get_breeding_rankings: (collar_name: string, stimulation: number, cb: (json: string) => void) => void;
   suggest_breeding_llm: (collar_name: string, stimulation: number) => void;
+  get_room_stats: (cb: (json: string) => void) => void;
+  get_room_distribution: (cb: (json: string) => void) => void;
+  get_overall_rankings: (cb: (json: string) => void) => void;
+  suggest_distribution_llm: () => void;
 
   get_update_info: (cb: (json: string) => void) => void;
   open_url: (url: string) => void;
@@ -39,6 +43,8 @@ interface BridgeObject {
   llm_status_changed: { connect: (fn: (status: string) => void) => void };
   collars_updated: { connect: (fn: (json: string) => void) => void };
   breeding_result: { connect: (fn: (json: string) => void) => void };
+  distribution_result: { connect: (fn: (json: string) => void) => void };
+  room_stats_updated: { connect: (fn: (json: string) => void) => void };
   update_available: { connect: (fn: (json: string) => void) => void };
   update_check_status: { connect: (fn: (json: string) => void) => void };
 }
@@ -214,6 +220,11 @@ export interface BreedingAdvice {
   parent_a_coeff: number;
   parent_b_coeff: number;
   disorder_chance_per_parent: number;
+  birth_defect_disorder_chance: number;
+  birth_defect_parts_chance: number;
+  class_bias_chance: number;
+  comfort_breeding_odds: string | null;
+  room_context: { room_name: string; stimulation: number; comfort: number } | null;
   tips: string[] | null;
 }
 
@@ -224,6 +235,8 @@ export interface PairRanking {
   cat_b_name: string;
   expected_score: number;
   reason: string;
+  same_room: boolean;
+  room_name: string;
 }
 
 export interface BreedingResult {
@@ -255,4 +268,56 @@ export function suggestBreedingLlm(collarName: string, stimulation: number) {
 
 export function onBreedingResult(fn: (result: BreedingResult) => void) {
   bridge?.breeding_result.connect((json: string) => fn(JSON.parse(json)));
+}
+
+// ── Room stats ────────────────────────────────────────────────────
+
+export function getRoomStats(): Promise<Record<string, RoomStats>> {
+  if (!bridge) return Promise.resolve({});
+  return promiseSlot<Record<string, RoomStats>>(bridge.get_room_stats.bind(bridge));
+}
+
+export function onRoomStatsUpdated(fn: (stats: Record<string, RoomStats>) => void) {
+  bridge?.room_stats_updated.connect((json: string) => fn(JSON.parse(json)));
+}
+
+// ── Room distribution ─────────────────────────────────────────────
+
+export interface RoomAssignment {
+  room_name: string;
+  cat_keys: number[];
+  best_pair: [number, number] | null;
+  pair_score: number;
+  pair_reason: string;
+  room_stimulation: number;
+  room_comfort: number;
+  comfort_breeding_odds: string;
+}
+
+export interface RoomDistribution {
+  rooms: RoomAssignment[];
+  total_score: number;
+}
+
+export interface DistributionResult {
+  source: 'calculator' | 'llm';
+  distribution: RoomDistribution | null;
+}
+
+export function getRoomDistribution(): Promise<RoomDistribution | null> {
+  if (!bridge) return Promise.resolve(null);
+  return promiseSlot<RoomDistribution | null>(bridge.get_room_distribution.bind(bridge));
+}
+
+export function getOverallRankings(): Promise<PairRanking[]> {
+  if (!bridge) return Promise.resolve([]);
+  return promiseSlot<PairRanking[]>(bridge.get_overall_rankings.bind(bridge));
+}
+
+export function suggestDistributionLlm() {
+  bridge?.suggest_distribution_llm();
+}
+
+export function onDistributionResult(fn: (result: DistributionResult) => void) {
+  bridge?.distribution_result.connect((json: string) => fn(JSON.parse(json)));
 }

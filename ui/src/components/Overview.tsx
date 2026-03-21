@@ -6,11 +6,12 @@ import { ClassFit } from '@/components/ClassFit';
 import { TopThreeList } from '@/components/TopThreeList';
 import { AvgRadar } from '@/components/AvgRadar';
 import { BreedingPanel } from '@/components/BreedingPanel';
-import type { RosterEntry, CollarDef } from '@/types';
+import type { RosterEntry, CollarDef, RoomStats } from '@/types';
 
 interface OverviewProps {
   roster: RosterEntry[];
   collars: CollarDef[];
+  roomStats: Record<string, RoomStats>;
   llmAvailable: boolean;
   bridgeConnected: boolean;
   hideBreedTab?: boolean;
@@ -25,6 +26,7 @@ const tabVariants = {
 export function Overview({
   roster,
   collars,
+  roomStats,
   llmAvailable,
   bridgeConnected,
   hideBreedTab,
@@ -127,7 +129,7 @@ export function Overview({
                     {cats.length >= 2 ? (
                       <BreedingPanel
                         cats={cats}
-                        collars={collars}
+                        roomStats={roomStats}
                         llmAvailable={llmAvailable}
                         bridgeConnected={bridgeConnected}
                       />

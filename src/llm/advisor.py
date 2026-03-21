@@ -631,3 +631,92 @@ class LLMAdvisor:
         key = f"breed:{cat_a.db_key}:{cat_b.db_key}:{collar_name}:0"
         self._explanation_cache[key] = explanation
         return explanation
+
+    # ── Room distribution ─────────────────────────────────────────────
+
+    def suggest_room_distribution(
+        self,
+        cats: list["SaveCat"],
+        room_stats: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Ask LLM to suggest optimal cat placement across rooms.
+
+        Returns a dict matching RoomDistribution shape:
+          { rooms: [...RoomAssignment], total_score: float }
+        Returns None if LLM unavailable.
+        """
+        if not self.available or len(cats) < 2:
+            return None
+
+        if self._mock:
+            return self._mock_room_distribution(cats, room_stats)
+
+        cat_summaries = "\n".join(
+            f"  key={c.db_key} {_cat_summary(c)} | gender={c.gender} "
+            f"| inbreeding={c.breed_coefficient:.2f} | room={c.room}"
+            for c in cats[:20]
+        )
+
+        room_info = "\n".join(
+            f"  {name}: stimulation={rs.stimulation} comfort={rs.comfort} "
+            f"health={rs.health} mutation={rs.mutation} cats={rs.cat_count}"
+            for name, rs in room_stats.items()
+        )
+
+        prompt = (
+            f"Suggest the best cat-to-room distribution for overnight breeding.\n\n"
+            f"Available cats:\n{cat_summaries}\n\n"
+            f"Rooms:\n{room_info}\n\n"
+            f"Breeding mechanics:\n{self._breeding_context}\n\n"
+            f"Rules:\n"
+            f"- Each room should ideally have one male + one female for breeding\n"
+            f"- Pair cats with complementary stats (high + high preferred)\n"
+            f"- Place best pairs in rooms with highest stimulation\n"
+            f"- More than 4 cats per room reduces comfort and breeding odds\n"
+            f"- Avoid pairing cats with high inbreeding coefficients\n"
+            f"- Maximize total expected offspring stat sum across all rooms\n\n"
+            f"Respond with ONLY a JSON object:\n"
+            f'{{"rooms": [{{"room_name": "...", "cat_keys": [int, ...], '
+            f'"best_pair": [int, int] or null, "pair_score": float, '
+            f'"pair_reason": "1 sentence"}}, ...], '
+            f'"total_score": float}}\n'
+        )
+
+        raw = self._chat(
+            [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+        )
+        if not raw:
+            return None
+
+        try:
+            raw = raw.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+            result = json.loads(raw)
+            if isinstance(result, dict) and "rooms" in result:
+                return result
+            return None
+        except (json.JSONDecodeError, ValueError):
+            log.warning("Failed to parse room distribution response")
+            return None
+
+    def _mock_room_distribution(
+        self,
+        cats: list["SaveCat"],
+        room_stats: dict[str, Any],
+    ) -> dict[str, Any]:
+        time.sleep(0.7)
+
+        from src.breeding.calculator import suggest_room_distribution as calc_dist
+        from dataclasses import asdict
+
+        dist = calc_dist(cats, room_stats)
+        result = asdict(dist)
+        for room in result["rooms"]:
+            if room["best_pair"]:
+                room["pair_reason"] = "AI: " + room["pair_reason"]
+        return result
