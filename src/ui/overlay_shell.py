@@ -183,7 +183,10 @@ class OverlayShell(QMainWindow):
         channel.registerObject("bridge", self._bridge)
         self._web_view.page().setWebChannel(channel)
 
-        if UI_INDEX.exists():
+        if self._dev_mode:
+            url = QUrl("http://localhost:5173")
+            log.info("Dev mode: loading React UI from Vite: %s", url.toString())
+        elif UI_INDEX.exists():
             url = QUrl.fromLocalFile(str(UI_INDEX))
             log.info("Loading React UI from: %s", url.toString())
         else:
