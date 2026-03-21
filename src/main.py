@@ -13,14 +13,21 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.utils.config_loader import PROJECT_ROOT, AppConfig, load_config
+from src.utils.config_loader import APP_DATA_DIR, PROJECT_ROOT, AppConfig, load_config
 from src.utils.logging_setup import setup_logging
 
-load_dotenv(PROJECT_ROOT / "src" / ".env")
+if getattr(sys, "frozen", False):
+    _exe_dir = Path(sys.executable).parent
+    if (_exe_dir / ".env").exists():
+        load_dotenv(_exe_dir / ".env")
+    else:
+        load_dotenv(PROJECT_ROOT / ".env")
+else:
+    load_dotenv(PROJECT_ROOT / "src" / ".env")
 
 log = logging.getLogger("mewgent.main")
 
-PIDFILE = PROJECT_ROOT / "data" / "mewgent.pid"
+PIDFILE = APP_DATA_DIR / "data" / "mewgent.pid"
 
 
 def _kill_previous_instance() -> None:
@@ -141,7 +148,8 @@ def run_dev_ui(cfg: AppConfig) -> None:
 
 def main() -> None:
     cfg = load_config()
-    setup_logging(level=cfg.logging.level, log_file=cfg.logging.file)
+    log_path = str(APP_DATA_DIR / cfg.logging.file) if cfg.logging.file else None
+    setup_logging(level=cfg.logging.level, log_file=log_path)
     log.info("Mewgent v%s starting", "0.1.0")
 
     if "--dev-ui" in sys.argv:

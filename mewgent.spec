@@ -16,6 +16,10 @@ datas = [
     (str(ROOT / "images"), "images"),
 ]
 
+env_file = ROOT / "src" / ".env"
+if env_file.exists():
+    datas.append((str(env_file), "."))
+
 wiki_data = ROOT / "wiki_data"
 if wiki_data.exists():
     datas.append((str(wiki_data), "wiki_data"))

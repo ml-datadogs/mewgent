@@ -12,8 +12,10 @@ log = logging.getLogger("mewgent.config")
 
 if getattr(sys, "frozen", False):
     PROJECT_ROOT = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    APP_DATA_DIR = Path(sys.executable).parent
 else:
     PROJECT_ROOT = Path(__file__).resolve().parents[2]
+    APP_DATA_DIR = PROJECT_ROOT
 CONFIG_DIR = PROJECT_ROOT / "config"
 
 
