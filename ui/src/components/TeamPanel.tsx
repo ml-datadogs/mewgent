@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TeamSlotCard } from '@/components/TeamSlot';
+import { AiProgressStepper } from '@/components/AiProgressStepper';
 import { autofillTeam, autofillTeamLlm, clearTeam, setTeamSlot } from '@/bridge';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
 import type { TeamSlot, CollarDef } from '@/types';
@@ -89,20 +90,12 @@ export function TeamPanel({ team, collars, llmStatus, llmAvailable, teamSynergy 
             </Button>
           )}
 
-          {llmStatus && (
-            <motion.span
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-[10px] text-text-dim font-serif italic"
-            >
-              {llmStatus}
-            </motion.span>
-          )}
-
           <Button variant="destructive" onClick={clearTeam}>
             Clear
           </Button>
         </div>
+
+        <AiProgressStepper active={!!llmStatus} />
       </CardContent>
     </Card>
   );
