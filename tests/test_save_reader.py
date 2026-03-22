@@ -296,7 +296,9 @@ class TestRoomStats:
         assert "Floor1_Large" in save_data.room_stats
 
     def test_furniture_distributed_to_rooms(self, save_data: SaveData):
-        total_furniture = sum(rs.furniture_count for rs in save_data.room_stats.values())
+        total_furniture = sum(
+            rs.furniture_count for rs in save_data.room_stats.values()
+        )
         assert total_furniture > 0
         rooms_with_furniture = [
             name for name, rs in save_data.room_stats.items() if rs.furniture_count > 0

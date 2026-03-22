@@ -30,7 +30,7 @@ from src.data.collars import (
     unlocked_collars,
 )
 from src.data.save_reader import RoomStats, SaveCat, SaveData
-from src.llm.advisor import LLMAdvisor
+from src.llm.advisor import LLMAdvisor, build_llm_advisor
 from src.utils.config_loader import AppConfig
 
 log = logging.getLogger("mewgent.ui.bridge")
@@ -135,7 +135,9 @@ class _LLMBreedWorker(QThread):
 
     result_ready = Signal(object)
 
-    def __init__(self, advisor, cats, collar_name, stimulation, room_stats=None, parent=None):
+    def __init__(
+        self, advisor, cats, collar_name, stimulation, room_stats=None, parent=None
+    ):
         super().__init__(parent)
         self._advisor = advisor
         self._cats = cats
@@ -194,6 +196,7 @@ class OverlayBridge(QObject):
     room_stats_updated = Signal(str)
     update_available = Signal(str)
     update_check_status = Signal(str)
+    llm_settings_changed = Signal(str)
 
     def __init__(self, cfg: AppConfig, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -213,11 +216,7 @@ class OverlayBridge(QObject):
         self._update_check_worker: QThread | None = None
         self._room_stats: dict[str, RoomStats] = {}
 
-        self._llm = LLMAdvisor(
-            model=cfg.llm.model,
-            enabled=cfg.llm.enabled,
-            mock=cfg.llm.mock,
-        )
+        self._llm = build_llm_advisor(cfg.llm)
 
     def set_shell(self, shell) -> None:
         """Store a reference to the OverlayShell for window management."""
@@ -251,6 +250,36 @@ class OverlayBridge(QObject):
                 "status": self._status,
             }
         )
+
+    @Slot(result=str)
+    def get_llm_settings(self) -> str:
+        return json.dumps(
+            self._llm.settings_snapshot(default_model=self._cfg.llm.model)
+        )
+
+    @Slot(str, result=str)
+    def apply_llm_settings(self, payload: str) -> str:
+        try:
+            data = json.loads(payload)
+            if not isinstance(data, dict):
+                raise ValueError("invalid payload")
+            model = str(data.get("model", "")).strip()
+            key_action = str(data.get("key_action", "unchanged"))
+            key_value = str(data.get("api_key", ""))
+            if key_action not in ("unchanged", "set", "clear"):
+                key_action = "unchanged"
+            self._llm.apply_ui_settings(
+                default_model=self._cfg.llm.model,
+                model=model or self._cfg.llm.model,
+                key_action=key_action,
+                key_value=key_value,
+            )
+            snap = self._llm.settings_snapshot(default_model=self._cfg.llm.model)
+            self.llm_settings_changed.emit(json.dumps(snap))
+            return json.dumps({"ok": True})
+        except Exception as e:
+            log.exception("apply_llm_settings failed")
+            return json.dumps({"ok": False, "error": str(e)})
 
     @Slot(result=str)
     def get_room_stats(self) -> str:

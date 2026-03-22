@@ -8,17 +8,20 @@ import {
   getSaveInfo,
   getUpdateInfo,
   getRoomStats,
+  getLlmSettings,
   onRosterUpdated,
   onTeamUpdated,
   onTeamSynergyUpdated,
   onSaveInfoUpdated,
   onLlmStatusChanged,
+  onLlmSettingsChanged,
   onCollarsUpdated,
   onUpdateAvailable,
   onRoomStatsUpdated,
   onDistributionResult,
+  standaloneLlmPreviewSettings,
 } from '@/bridge';
-import type { UpdateInfo, DistributionResult } from '@/bridge';
+import type { UpdateInfo, DistributionResult, LlmSettings } from '@/bridge';
 import type { RosterEntry, CollarDef, TeamSlot, RoomStats } from '@/types';
 import {
   STANDALONE_COLLARS,
@@ -28,6 +31,10 @@ import {
   STANDALONE_SYNERGY,
   STANDALONE_TEAM,
 } from '@/dev/standaloneMock';
+import {
+  getMockTeamLlmStatus,
+  subscribeMockTeamLlmStatus,
+} from '@/dev/loaderPreview';
 
 export interface BridgeState {
   connected: boolean;
@@ -42,6 +49,7 @@ export interface BridgeState {
   updateInfo: UpdateInfo | null;
   roomStats: Record<string, RoomStats>;
   lastDistribution: DistributionResult | null;
+  llmSettings: LlmSettings | null;
 }
 
 export function useBridge(): BridgeState {
@@ -52,10 +60,12 @@ export function useBridge(): BridgeState {
   const [team, setTeam] = useState<(TeamSlot | null)[]>([null, null, null, null]);
   const [teamSynergy, setTeamSynergy] = useState('');
   const [saveInfo, setSaveInfo] = useState({ day: 0, cat_count: 0, status: 'Waiting for save data...' });
-  const [llmStatus, setLlmStatus] = useState('');
+  const [llmStatusFromBridge, setLlmStatusFromBridge] = useState('');
+  const [mockTeamLlmStatus, setMockTeamLlmStatus] = useState('');
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [roomStats, setRoomStats] = useState<Record<string, RoomStats>>({});
   const [lastDistribution, setLastDistribution] = useState<DistributionResult | null>(null);
+  const [llmSettings, setLlmSettings] = useState<LlmSettings | null>(null);
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -73,22 +83,25 @@ export function useBridge(): BridgeState {
           setTeamSynergy(STANDALONE_SYNERGY);
           setSaveInfo(STANDALONE_SAVE_INFO);
           setRoomStats(STANDALONE_ROOM_STATS);
+          setLlmSettings(standaloneLlmPreviewSettings());
         }
         return;
       }
 
-      const [r, c, t, s, rs] = await Promise.all([
+      const [r, c, t, s, rs, llm] = await Promise.all([
         getRoster(),
         getCollars(),
         getTeam(),
         getSaveInfo(),
         getRoomStats(),
+        getLlmSettings(),
       ]);
       setRoster(r);
       setCollars(c);
       setTeam(t);
       setSaveInfo(s);
       setRoomStats(rs);
+      if (llm) setLlmSettings(llm);
 
       getUpdateInfo().then((info) => {
         if (info) setUpdateInfo(info);
@@ -98,7 +111,8 @@ export function useBridge(): BridgeState {
       onTeamUpdated(setTeam);
       onTeamSynergyUpdated(setTeamSynergy);
       onSaveInfoUpdated(setSaveInfo);
-      onLlmStatusChanged(setLlmStatus);
+      onLlmStatusChanged(setLlmStatusFromBridge);
+      onLlmSettingsChanged(setLlmSettings);
       onCollarsUpdated(setCollars);
       onUpdateAvailable(setUpdateInfo);
       onRoomStatsUpdated(setRoomStats);
@@ -106,5 +120,26 @@ export function useBridge(): BridgeState {
     });
   }, []);
 
-  return { connected, uiPreview, roster, collars, team, teamSynergy, saveInfo, llmStatus, updateInfo, roomStats, lastDistribution };
+  useEffect(() => {
+    if (!import.meta.env.DEV || !uiPreview) return;
+    setMockTeamLlmStatus(getMockTeamLlmStatus());
+    return subscribeMockTeamLlmStatus(() => setMockTeamLlmStatus(getMockTeamLlmStatus()));
+  }, [uiPreview]);
+
+  const llmStatus = connected ? llmStatusFromBridge : mockTeamLlmStatus;
+
+  return {
+    connected,
+    uiPreview,
+    roster,
+    collars,
+    team,
+    teamSynergy,
+    saveInfo,
+    llmStatus,
+    updateInfo,
+    roomStats,
+    lastDistribution,
+    llmSettings,
+  };
 }

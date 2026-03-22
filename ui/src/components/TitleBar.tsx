@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 import { UpdateCheckButton } from '@/components/UpdateCheckButton';
@@ -10,9 +10,11 @@ interface TitleBarProps {
   connected: boolean;
   onBack?: () => void;
   borderless?: boolean;
+  /** Rendered after day/cat badges, before update/close (e.g. OpenAI popover) */
+  trailingSlot?: ReactNode;
 }
 
-export function TitleBar({ day, catCount, connected, onBack, borderless }: TitleBarProps) {
+export function TitleBar({ day, catCount, connected, onBack, borderless, trailingSlot }: TitleBarProps) {
   const dragging = useRef(false);
 
   const onDocMouseMove = useCallback((e: MouseEvent) => {
@@ -92,6 +94,8 @@ export function TitleBar({ day, catCount, connected, onBack, borderless }: Title
           </Badge>
         </motion.div>
       )}
+
+      {trailingSlot}
 
       <UpdateCheckButton connected={connected} variant="paper" />
 

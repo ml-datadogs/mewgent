@@ -36,7 +36,9 @@ export function TeamPanel({
   const hasTeam = team.some((s) => s !== null);
 
   return (
-    <div className={`flex flex-col gap-3 py-1${isLoading ? ' h-full' : ''}`}>
+    <div
+      className={`flex flex-col gap-3 py-1${isLoading ? ' min-h-full h-full' : ''}`}
+    >
       <div className="flex items-center gap-2 px-1">
         <span className="font-mono text-xs font-bold text-accent tracking-wider">
           TEAM
