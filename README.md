@@ -2,8 +2,9 @@
 
 > Live companion overlay for [Mewgenics](https://store.steampowered.com/app/Mewgenics) — real-time cat stats, breeding recommendations, and team management, right on top of your game.
 
-![Team panel](ui/public/mainscreens/team.png)
-![Breeding panel](ui/public/mainscreens/breeding.png)
+| Team | Breeding |
+| :---: | :---: |
+| <img src="ui/public/mainscreens/team.png" alt="Team panel" width="380" /> | <img src="ui/public/mainscreens/breeding.png" alt="Breeding panel" width="380" /> |
 
 ---
 
