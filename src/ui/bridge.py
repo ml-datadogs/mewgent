@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, QThread, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 
 from src.breeding.calculator import (
+    COMFORT_CAT_LIMIT,
     analyze_pair,
     rank_pairs_for_class,
     rank_pairs_overall,
@@ -610,6 +611,65 @@ class OverlayBridge(QObject):
                 slot["score"] = collar_score(slot["collar"], cs)
         self._emit_team()
 
+    def _backfill_llm_distribution(self, result: dict) -> dict:
+        """Ensure every house cat appears in exactly one room's cat_keys.
+
+        The LLM often only returns pair cats; this distributes the rest
+        using comfort headroom, matching the deterministic calculator logic.
+        """
+        rooms = result.get("rooms")
+        if not rooms or not self._house_cats or not self._room_stats:
+            return result
+
+        all_keys = {c.db_key for c in self._house_cats}
+        assigned: set[int] = set()
+        for room in rooms:
+            for k in room.get("cat_keys", []):
+                assigned.add(k)
+
+        missing = [c for c in self._house_cats if c.db_key not in assigned]
+        if not missing:
+            return result
+
+        room_by_name: dict[str, dict] = {r["room_name"]: r for r in rooms}
+        for rname in self._room_stats:
+            if rname not in room_by_name:
+                new_room = {
+                    "room_name": rname,
+                    "cat_keys": [],
+                    "best_pair": None,
+                    "pair_score": 0.0,
+                    "pair_reason": "",
+                }
+                rooms.append(new_room)
+                room_by_name[rname] = new_room
+
+        for cat in missing:
+            best_room_name: str | None = None
+            best_headroom = float("-inf")
+            for rname, room in room_by_name.items():
+                rs = self._room_stats.get(rname)
+                if rs is None:
+                    continue
+                count_after = len(room.get("cat_keys", [])) + 1
+                headroom = rs.comfort - max(0, count_after - COMFORT_CAT_LIMIT)
+                if headroom > best_headroom:
+                    best_headroom = headroom
+                    best_room_name = rname
+                elif headroom == best_headroom and best_room_name is not None:
+                    if not room.get("best_pair") and room_by_name[best_room_name].get("best_pair"):
+                        best_room_name = rname
+            if best_room_name:
+                room_by_name[best_room_name].setdefault("cat_keys", []).append(cat.db_key)
+
+        for room in rooms:
+            rs = self._room_stats.get(room["room_name"])
+            if rs:
+                count = len(room.get("cat_keys", []))
+                room["effective_comfort"] = rs.comfort - max(0, count - COMFORT_CAT_LIMIT)
+
+        return result
+
     @Slot(object)
     def _on_llm_team_result(self, result: dict | None) -> None:
         self.llm_status_changed.emit("")
@@ -670,6 +730,7 @@ class OverlayBridge(QObject):
     def _on_llm_distribution_result(self, result: dict | None) -> None:
         self.llm_status_changed.emit("")
         if result and isinstance(result, dict):
+            result = self._backfill_llm_distribution(result)
             self.distribution_result.emit(
                 json.dumps({"source": "llm", "distribution": result})
             )

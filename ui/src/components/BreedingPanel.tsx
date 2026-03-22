@@ -378,7 +378,8 @@ function RoomCard({
 
   const hasPair = assignment?.best_pair != null;
   const pairKeys = new Set(assignment?.best_pair ?? []);
-  const comfortWarning = stats.cat_count > 4;
+  const catCount = assignedKeys.length > 0 ? displayCats.length : stats.cat_count;
+  const comfortWarning = catCount > 4;
 
   return (
     <motion.div
@@ -399,7 +400,7 @@ function RoomCard({
           </span>
           <div className="flex items-center gap-1.5">
             <span className={`text-[9px] font-mono ${comfortWarning ? 'text-poor font-bold' : 'text-text-dim'}`}>
-              {stats.cat_count} cat{stats.cat_count !== 1 ? 's' : ''}
+              {catCount} cat{catCount !== 1 ? 's' : ''}
               {comfortWarning && ' \u26a0'}
             </span>
           </div>
@@ -410,8 +411,9 @@ function RoomCard({
           <div className="flex gap-1">
             {ROOM_STAT_ICONS.map(({ key, label, color }) => {
               const isComfort = key === 'comfort';
-              const value = isComfort ? stats.effective_comfort : stats[key];
-              const penalized = isComfort && stats.effective_comfort < stats.comfort;
+              const effComfort = assignment?.effective_comfort ?? stats.effective_comfort;
+              const value = isComfort ? effComfort : stats[key];
+              const penalized = isComfort && effComfort < stats.comfort;
               return (
                 <div key={key} className="text-center flex-1">
                   <div className="text-[9px] font-mono font-bold tracking-wider" style={{ color }}>{label}</div>

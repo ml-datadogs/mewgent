@@ -291,6 +291,7 @@ export interface RoomAssignment {
   pair_reason: string;
   room_stimulation: number;
   room_comfort: number;
+  effective_comfort: number;
   comfort_breeding_odds: string;
 }
 
