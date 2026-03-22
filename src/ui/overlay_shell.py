@@ -202,7 +202,9 @@ class OverlayShell(QMainWindow):
 
         if self._dev_mode:
             # Bust document cache; Vite ignores unknown query params on /.
-            url = QUrl(f"http://localhost:5173/?__mewgent_dev={int(time.time() * 1000)}")
+            url = QUrl(
+                f"http://localhost:5173/?__mewgent_dev={int(time.time() * 1000)}"
+            )
             log.info("Dev mode: loading React UI from Vite: %s", url.toString())
         elif UI_INDEX.exists():
             url = QUrl.fromLocalFile(str(UI_INDEX))
@@ -237,7 +239,10 @@ class OverlayShell(QMainWindow):
             self._web_view.setZoomFactor(zoom)
             log.info(
                 "Physical DPI %.0f, DPR %.2f, effective %.0f — zoom %.2f",
-                physical_dpi, dpr, effective_dpi, zoom,
+                physical_dpi,
+                dpr,
+                effective_dpi,
+                zoom,
             )
 
     # ── System tray ──────────────────────────────────────────────────

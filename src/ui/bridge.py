@@ -134,7 +134,9 @@ class _LLMBreedWorker(QThread):
 
     result_ready = Signal(object)
 
-    def __init__(self, advisor, cats, collar_name, stimulation, room_stats=None, parent=None):
+    def __init__(
+        self, advisor, cats, collar_name, stimulation, room_stats=None, parent=None
+    ):
         super().__init__(parent)
         self._advisor = advisor
         self._cats = cats
