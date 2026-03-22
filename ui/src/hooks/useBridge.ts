@@ -8,17 +8,20 @@ import {
   getSaveInfo,
   getUpdateInfo,
   getRoomStats,
+  getLlmSettings,
   onRosterUpdated,
   onTeamUpdated,
   onTeamSynergyUpdated,
   onSaveInfoUpdated,
   onLlmStatusChanged,
+  onLlmSettingsChanged,
   onCollarsUpdated,
   onUpdateAvailable,
   onRoomStatsUpdated,
   onDistributionResult,
+  standaloneLlmPreviewSettings,
 } from '@/bridge';
-import type { UpdateInfo, DistributionResult } from '@/bridge';
+import type { UpdateInfo, DistributionResult, LlmSettings } from '@/bridge';
 import type { RosterEntry, CollarDef, TeamSlot, RoomStats } from '@/types';
 import {
   STANDALONE_COLLARS,
@@ -42,6 +45,7 @@ export interface BridgeState {
   updateInfo: UpdateInfo | null;
   roomStats: Record<string, RoomStats>;
   lastDistribution: DistributionResult | null;
+  llmSettings: LlmSettings | null;
 }
 
 export function useBridge(): BridgeState {
@@ -56,6 +60,7 @@ export function useBridge(): BridgeState {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [roomStats, setRoomStats] = useState<Record<string, RoomStats>>({});
   const [lastDistribution, setLastDistribution] = useState<DistributionResult | null>(null);
+  const [llmSettings, setLlmSettings] = useState<LlmSettings | null>(null);
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -73,22 +78,25 @@ export function useBridge(): BridgeState {
           setTeamSynergy(STANDALONE_SYNERGY);
           setSaveInfo(STANDALONE_SAVE_INFO);
           setRoomStats(STANDALONE_ROOM_STATS);
+          setLlmSettings(standaloneLlmPreviewSettings());
         }
         return;
       }
 
-      const [r, c, t, s, rs] = await Promise.all([
+      const [r, c, t, s, rs, llm] = await Promise.all([
         getRoster(),
         getCollars(),
         getTeam(),
         getSaveInfo(),
         getRoomStats(),
+        getLlmSettings(),
       ]);
       setRoster(r);
       setCollars(c);
       setTeam(t);
       setSaveInfo(s);
       setRoomStats(rs);
+      if (llm) setLlmSettings(llm);
 
       getUpdateInfo().then((info) => {
         if (info) setUpdateInfo(info);
@@ -99,6 +107,7 @@ export function useBridge(): BridgeState {
       onTeamSynergyUpdated(setTeamSynergy);
       onSaveInfoUpdated(setSaveInfo);
       onLlmStatusChanged(setLlmStatus);
+      onLlmSettingsChanged(setLlmSettings);
       onCollarsUpdated(setCollars);
       onUpdateAvailable(setUpdateInfo);
       onRoomStatsUpdated(setRoomStats);
@@ -106,5 +115,18 @@ export function useBridge(): BridgeState {
     });
   }, []);
 
-  return { connected, uiPreview, roster, collars, team, teamSynergy, saveInfo, llmStatus, updateInfo, roomStats, lastDistribution };
+  return {
+    connected,
+    uiPreview,
+    roster,
+    collars,
+    team,
+    teamSynergy,
+    saveInfo,
+    llmStatus,
+    updateInfo,
+    roomStats,
+    lastDistribution,
+    llmSettings,
+  };
 }

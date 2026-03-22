@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from src.data.collars import CollarDef
     from src.data.save_reader import SaveCat
+    from src.utils.config_loader import LLMConfig
 
 log = logging.getLogger("mewgent.llm.advisor")
 
@@ -40,6 +41,17 @@ _ROLE_TAGS: dict[str, str] = {
     "Jester": "wildcard",
     "Collarless": "generalist",
 }
+
+OPENAI_MODEL_CHOICES: tuple[str, ...] = (
+    "gpt-4o-mini",
+    "gpt-4o",
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-4.1-nano",
+    "gpt-5.4",
+    "o4-mini",
+    "o3-mini",
+)
 
 _MOCK_EXPLANATIONS = [
     "High {stat} makes this cat a natural {role}, and {ability} synergizes well with the class kit.",
@@ -91,7 +103,7 @@ class LLMAdvisor:
     """Advisor for class scoring, team synergy, and explanations.
 
     Supports three modes:
-    - Real: Uses OpenAI API (requires OPENAI_API_KEY)
+    - Real: Uses OpenAI API (saved key in overlay data dir or OPENAI_API_KEY)
     - Mock: Returns realistic fake data with simulated latency (for dev/demo)
     - Disabled: Returns empty/None for all methods
     """
@@ -102,10 +114,12 @@ class LLMAdvisor:
         model: str = "gpt-4o-mini",
         enabled: bool = True,
         mock: bool = False,
+        user_api_key: str | None = None,
     ) -> None:
         self._model = model
-        self._enabled = enabled
+        self._cfg_llm_enabled = enabled
         self._mock = mock
+        self._user_api_key = user_api_key
         self._client: Any = None
         self._wiki_context: str = ""
         self._breeding_context: str = ""
@@ -116,32 +130,84 @@ class LLMAdvisor:
             return
 
         if mock:
-            self._enabled = True
             log.info("LLM advisor running in MOCK mode")
             return
 
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
-            log.warning("OPENAI_API_KEY not set -- LLM advisor disabled")
-            self._enabled = False
-            return
+        self._init_live_client()
 
+    def _init_live_client(self) -> None:
+        self._client = None
+        api_key = (self._user_api_key or "").strip() or os.environ.get(
+            "OPENAI_API_KEY", ""
+        )
+        if not api_key:
+            log.warning(
+                "No OpenAI API key (overlay settings or OPENAI_API_KEY) — LLM advisor inactive"
+            )
+            return
         try:
             from openai import OpenAI
 
             self._client = OpenAI(api_key=api_key)
-            self._wiki_context = _load_wiki_context()
-            self._breeding_context = _load_breeding_context()
-            log.info("LLM advisor ready (model=%s)", model)
+            if not self._wiki_context:
+                self._wiki_context = _load_wiki_context()
+            if not self._breeding_context:
+                self._breeding_context = _load_breeding_context()
+            log.info("LLM advisor ready (model=%s)", self._model)
         except Exception:
             log.exception("Failed to initialize OpenAI client")
-            self._enabled = False
+            self._client = None
+
+    def apply_ui_settings(
+        self,
+        *,
+        default_model: str,
+        model: str,
+        key_action: str,
+        key_value: str,
+    ) -> None:
+        from src.utils.llm_user_store import UserLlm, save_user_llm
+
+        self._model = model.strip() or default_model
+        if key_action == "set":
+            self._user_api_key = key_value.strip() or None
+        elif key_action == "clear":
+            self._user_api_key = None
+
+        save_user_llm(
+            UserLlm(
+                model=self._model,
+                api_key=self._user_api_key,
+            )
+        )
+        self.clear_cache()
+
+        if not self._cfg_llm_enabled or self._mock:
+            return
+
+        self._init_live_client()
+
+    def settings_snapshot(self, *, default_model: str) -> dict[str, Any]:
+        models = list(OPENAI_MODEL_CHOICES)
+        if self._model not in models:
+            models.insert(0, self._model)
+        return {
+            "model": self._model,
+            "default_model": default_model,
+            "models": models,
+            "has_saved_key": bool(self._user_api_key),
+            "available": self.available,
+            "mock": self._mock,
+            "enabled": self._cfg_llm_enabled,
+        }
 
     @property
     def available(self) -> bool:
+        if not self._cfg_llm_enabled:
+            return False
         if self._mock:
-            return self._enabled
-        return self._enabled and self._client is not None
+            return True
+        return self._client is not None
 
     def _chat(
         self, messages: list[dict[str, str]], temperature: float = 0.3
@@ -737,3 +803,16 @@ class LLMAdvisor:
             if room["best_pair"]:
                 room["pair_reason"] = "AI: " + room["pair_reason"]
         return result
+
+
+def build_llm_advisor(cfg: "LLMConfig") -> LLMAdvisor:
+    from src.utils.llm_user_store import load_user_llm
+
+    user = load_user_llm()
+    model = user.model if user.model else cfg.model
+    return LLMAdvisor(
+        model=model,
+        enabled=cfg.enabled,
+        mock=cfg.mock,
+        user_api_key=user.api_key,
+    )

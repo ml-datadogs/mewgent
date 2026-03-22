@@ -41,7 +41,7 @@ from src.data.collars import (
     unlocked_collars,
 )
 from src.data.save_reader import SaveCat, SaveData
-from src.llm.advisor import LLMAdvisor
+from src.llm.advisor import LLMAdvisor, build_llm_advisor
 from src.utils.config_loader import PROJECT_ROOT, AppConfig
 
 log = logging.getLogger("mewgent.ui.overlay")
@@ -626,11 +626,7 @@ class MewgentOverlay(QMainWindow):
         self._stat_icons = _load_stat_icons(14)
         self._class_icons = _load_class_icons(18)
 
-        self._llm = LLMAdvisor(
-            model=cfg.llm.model,
-            enabled=cfg.llm.enabled,
-            mock=cfg.llm.mock,
-        )
+        self._llm = build_llm_advisor(cfg.llm)
         self._llm_worker: _LLMTeamWorker | None = None
         self._llm_explain_workers: list[_LLMExplainWorker] = []
 

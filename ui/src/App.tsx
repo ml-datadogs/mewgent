@@ -10,6 +10,7 @@ import { UpdateBanner } from '@/components/UpdateBanner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useBridge } from '@/hooks/useBridge';
 import { autofillTeamLlm } from '@/bridge';
+import { LlmSettingsBar } from '@/components/LlmSettingsBar';
 
 const pageVariants = {
   initial: { opacity: 0, y: 16 },
@@ -18,9 +19,10 @@ const pageVariants = {
 };
 
 export default function App() {
-  const { connected, uiPreview, roster, collars, team, teamSynergy, saveInfo, llmStatus, updateInfo, roomStats } =
+  const { connected, uiPreview, roster, collars, team, teamSynergy, saveInfo, llmStatus, updateInfo, roomStats, llmSettings } =
     useBridge();
-  const showAiControls = connected || uiPreview;
+  const showAiControls =
+    uiPreview || (connected && llmSettings !== null && llmSettings.available);
   const [mode, setMode] = useState<'home' | AppMode>('home');
   const cats = roster.map((r) => r.cat);
   const didAutoFill = useRef(false);
@@ -29,13 +31,13 @@ export default function App() {
 
   useEffect(() => {
     if (mode !== 'team' || didAutoFill.current) return;
-    if (!(connected || uiPreview)) return;
+    if (!connected || !llmSettings?.available) return;
     const isEmpty = team.every((s) => s === null);
     if (isEmpty) {
       didAutoFill.current = true;
       autofillTeamLlm();
     }
-  }, [mode, connected, uiPreview, team]);
+  }, [mode, connected, team, llmSettings?.available]);
 
   const goHome = () => setMode('home');
 
@@ -43,14 +45,25 @@ export default function App() {
     <TooltipProvider>
       <div className="h-full w-full p-0">
         {mode === 'home' && (
-          <div className="h-full w-full overflow-hidden">
-            <HomeCarousel
-              onSelect={setMode}
-              day={saveInfo.day}
-              catCount={saveInfo.cat_count}
-              connected={connected}
-              uiPreview={uiPreview}
-            />
+          <div className="h-full w-full flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 relative">
+              <HomeCarousel
+                onSelect={setMode}
+                day={saveInfo.day}
+                catCount={saveInfo.cat_count}
+                connected={connected}
+                uiPreview={uiPreview}
+              />
+            </div>
+            {(connected || uiPreview) && llmSettings?.enabled && (
+              <div className="shrink-0 max-h-[min(260px,45vh)] overflow-y-auto border-t border-white/10 bg-gradient-to-t from-black/55 via-black/35 to-transparent px-2 pb-2 pt-1.5">
+                <LlmSettingsBar
+                  bridgeConnected={connected}
+                  settings={llmSettings}
+                  onDarkBackground
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -66,6 +79,8 @@ export default function App() {
               />
 
               {updateInfo && <UpdateBanner info={updateInfo} />}
+
+              <LlmSettingsBar bridgeConnected={connected} settings={llmSettings} />
 
               <motion.div
                 key="breeding"
@@ -111,6 +126,8 @@ export default function App() {
               />
 
               {updateInfo && <UpdateBanner info={updateInfo} />}
+
+              <LlmSettingsBar bridgeConnected={connected} settings={llmSettings} />
 
               <motion.div
                 key="team"

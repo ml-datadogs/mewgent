@@ -35,6 +35,8 @@ interface BridgeObject {
   get_update_info: (cb: (json: string) => void) => void;
   open_url: (url: string) => void;
   check_for_updates: () => void;
+  get_llm_settings: (cb: (json: string) => void) => void;
+  apply_llm_settings: (payload_json: string, cb: (json: string) => void) => void;
 
   roster_updated: { connect: (fn: (json: string) => void) => void };
   team_updated: { connect: (fn: (json: string) => void) => void };
@@ -47,6 +49,7 @@ interface BridgeObject {
   room_stats_updated: { connect: (fn: (json: string) => void) => void };
   update_available: { connect: (fn: (json: string) => void) => void };
   update_check_status: { connect: (fn: (json: string) => void) => void };
+  llm_settings_changed: { connect: (fn: (json: string) => void) => void };
 }
 
 let bridge: BridgeObject | null = null;
@@ -151,6 +154,69 @@ export function onSaveInfoUpdated(fn: (info: { day: number; cat_count: number; s
 
 export function onLlmStatusChanged(fn: (status: string) => void) {
   bridge?.llm_status_changed.connect(fn);
+}
+
+// ── LLM (BYOK + model) ───────────────────────────────────────────
+
+export interface LlmSettings {
+  model: string;
+  default_model: string;
+  models: string[];
+  has_saved_key: boolean;
+  available: boolean;
+  mock: boolean;
+  enabled: boolean;
+}
+
+export interface LlmApplyPayload {
+  model: string;
+  key_action: 'unchanged' | 'set' | 'clear';
+  api_key: string;
+}
+
+const STANDALONE_LLM_MODELS = [
+  'gpt-4o-mini',
+  'gpt-4o',
+  'gpt-4.1',
+  'gpt-4.1-mini',
+  'gpt-4.1-nano',
+  'gpt-5.4',
+  'o4-mini',
+  'o3-mini',
+];
+
+export function getLlmSettings(): Promise<LlmSettings | null> {
+  if (!bridge) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    bridge!.get_llm_settings((json: string) => {
+      resolve(JSON.parse(json) as LlmSettings);
+    });
+  });
+}
+
+export function applyLlmSettings(payload: LlmApplyPayload): Promise<{ ok: boolean; error?: string }> {
+  if (!bridge) return Promise.resolve({ ok: false, error: 'disconnected' });
+  return new Promise((resolve) => {
+    bridge!.apply_llm_settings(JSON.stringify(payload), (json: string) => {
+      resolve(JSON.parse(json) as { ok: boolean; error?: string });
+    });
+  });
+}
+
+export function onLlmSettingsChanged(fn: (settings: LlmSettings) => void) {
+  bridge?.llm_settings_changed.connect((json: string) => fn(JSON.parse(json) as LlmSettings));
+}
+
+export function standaloneLlmPreviewSettings(): LlmSettings {
+  return {
+    model: 'gpt-4o-mini',
+    default_model: 'gpt-4o-mini',
+    models: STANDALONE_LLM_MODELS,
+    has_saved_key: false,
+    available: false,
+    mock: false,
+    enabled: true,
+  };
 }
 
 export function onCollarsUpdated(fn: (collars: CollarDef[]) => void) {
