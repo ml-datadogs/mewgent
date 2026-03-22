@@ -286,3 +286,28 @@ class TestFindSaveFiles:
         saves = find_save_files()
         assert len(saves) >= 1
         assert any(s.name.endswith(".sav") for s in saves)
+
+
+class TestRoomStats:
+    def test_room_stats_has_no_empty_keys(self, save_data: SaveData):
+        assert "" not in save_data.room_stats
+
+    def test_room_stats_has_known_rooms(self, save_data: SaveData):
+        assert "Floor1_Large" in save_data.room_stats
+
+    def test_furniture_distributed_to_rooms(self, save_data: SaveData):
+        total_furniture = sum(rs.furniture_count for rs in save_data.room_stats.values())
+        assert total_furniture > 0
+        rooms_with_furniture = [
+            name for name, rs in save_data.room_stats.items() if rs.furniture_count > 0
+        ]
+        assert len(rooms_with_furniture) >= 2
+
+    def test_stats_computed_from_furniture(self, save_data: SaveData):
+        rs = save_data.room_stats["Floor1_Large"]
+        assert rs.furniture_count == 29
+        assert rs.appeal == 6
+        assert rs.comfort == 21
+        assert rs.stimulation == 15
+        assert rs.health == 6
+        assert rs.mutation == 0

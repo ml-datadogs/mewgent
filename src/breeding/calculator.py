@@ -76,6 +76,7 @@ class RoomAssignment:
     pair_reason: str = ""
     room_stimulation: int = 0
     room_comfort: int = 0
+    effective_comfort: int = 0
     comfort_breeding_odds: str = ""
 
 
@@ -421,32 +422,26 @@ def suggest_room_distribution(
 ) -> RoomDistribution:
     """Suggest optimal cat placement across rooms for maximum breeding quality.
 
-    Greedy algorithm:
-    1. Build all valid opposite-gender pairs and score them per room
-    2. Sort by (score * inbreeding_penalty) descending
-    3. Assign best pair to best room, removing used cats from pool
-    4. Remaining cats are placed in rooms they were already in
+    Algorithm:
+    1. Score every (male, female, room) triple using stimulation, inbreeding,
+       and a comfort factor derived from effective_comfort.
+    2. Greedily assign the best pair to the best room.
+    3. Distribute remaining cats across rooms, preferring rooms with the most
+       comfort headroom (effective_comfort after accounting for assigned cats).
     """
-    rooms_with_stim = {
-        name: rs for name, rs in room_stats.items() if rs.stimulation > 0
-    }
-
-    if not rooms_with_stim:
-        rooms_with_stim = dict(room_stats)
-
     males = [c for c in cats if c.gender == "male"]
     females = [c for c in cats if c.gender == "female"]
 
     candidates: list[tuple[float, str, "SaveCat", "SaveCat"]] = []
     for m in males:
         for f in females:
-            for rname, rs in rooms_with_stim.items():
+            for rname, rs in room_stats.items():
                 stim = max(0, rs.stimulation)
                 raw = _pair_total_score(m, f, stim)
                 penalty = _inbreeding_penalty(m.breed_coefficient, f.breed_coefficient)
 
-                comfort_pen = max(0, rs.cat_count - COMFORT_CAT_LIMIT)
-                comfort_factor = max(0.6, 1.0 - 0.05 * comfort_pen)
+                eff_comfort = rs.comfort - max(0, rs.cat_count - COMFORT_CAT_LIMIT)
+                comfort_factor = max(0.6, 1.0 - 0.05 * max(0, -eff_comfort))
 
                 score = raw * penalty * comfort_factor
                 candidates.append((score, rname, m, f))
@@ -465,7 +460,6 @@ def suggest_room_distribution(
 
         rs = room_stats[rname]
         stim = max(0, rs.stimulation)
-        comfort_odds = _comfort_breeding_odds(rs.comfort, rs.cat_count)
 
         parts: list[str] = [f"Expected total {score:.0f}"]
         avg_inbred = (cat_m.breed_coefficient + cat_f.breed_coefficient) / 2
@@ -473,6 +467,8 @@ def suggest_room_distribution(
             parts.append(f"inbreeding {avg_inbred:.0%}")
         parts.append(f"stim {stim}")
 
+        cat_count_after = 2
+        eff_comfort = rs.comfort - max(0, cat_count_after - COMFORT_CAT_LIMIT)
         assignments[rname] = RoomAssignment(
             room_name=rname,
             cat_keys=[cat_m.db_key, cat_f.db_key],
@@ -481,7 +477,8 @@ def suggest_room_distribution(
             pair_reason=", ".join(parts),
             room_stimulation=stim,
             room_comfort=rs.comfort,
-            comfort_breeding_odds=comfort_odds,
+            effective_comfort=eff_comfort,
+            comfort_breeding_odds=_comfort_breeding_odds(rs.comfort, cat_count_after),
         )
         used_cats.add(cat_m.db_key)
         used_cats.add(cat_f.db_key)
@@ -495,20 +492,32 @@ def suggest_room_distribution(
                 cat_keys=[],
                 room_stimulation=max(0, rs.stimulation),
                 room_comfort=rs.comfort,
-                comfort_breeding_odds=_comfort_breeding_odds(rs.comfort, rs.cat_count),
+                effective_comfort=rs.effective_comfort,
+                comfort_breeding_odds=_comfort_breeding_odds(rs.comfort, 0),
             )
 
-    for cat in cats:
-        if cat.db_key in used_cats:
-            continue
-        room = cat.room or ""
-        if room in assignments:
-            assignments[room].cat_keys.append(cat.db_key)
-        else:
-            for rname, ra in assignments.items():
-                if not ra.best_pair:
-                    ra.cat_keys.append(cat.db_key)
-                    break
+    remaining = [c for c in cats if c.db_key not in used_cats]
+    for cat in remaining:
+        best_room = None
+        best_headroom = float("-inf")
+        for rname, ra in assignments.items():
+            rs = room_stats[rname]
+            count_after = len(ra.cat_keys) + 1
+            headroom = rs.comfort - max(0, count_after - COMFORT_CAT_LIMIT)
+            if headroom > best_headroom:
+                best_headroom = headroom
+                best_room = rname
+            elif headroom == best_headroom and best_room is not None:
+                if not ra.best_pair and assignments[best_room].best_pair:
+                    best_room = rname
+        if best_room:
+            assignments[best_room].cat_keys.append(cat.db_key)
+
+    for rname, ra in assignments.items():
+        rs = room_stats[rname]
+        count = len(ra.cat_keys)
+        ra.effective_comfort = rs.comfort - max(0, count - COMFORT_CAT_LIMIT)
+        ra.comfort_breeding_odds = _comfort_breeding_odds(rs.comfort, count)
 
     room_list = sorted(assignments.values(), key=lambda r: r.pair_score, reverse=True)
     total = sum(r.pair_score for r in room_list)

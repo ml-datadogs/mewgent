@@ -134,12 +134,13 @@ class _LLMBreedWorker(QThread):
 
     result_ready = Signal(object)
 
-    def __init__(self, advisor, cats, collar_name, stimulation, parent=None):
+    def __init__(self, advisor, cats, collar_name, stimulation, room_stats=None, parent=None):
         super().__init__(parent)
         self._advisor = advisor
         self._cats = cats
         self._collar_name = collar_name
         self._stimulation = stimulation
+        self._room_stats = room_stats
 
     def run(self):
         try:
@@ -147,6 +148,7 @@ class _LLMBreedWorker(QThread):
                 self._cats,
                 self._collar_name,
                 self._stimulation,
+                room_stats=self._room_stats,
             )
             self.result_ready.emit(result)
         except Exception:
@@ -481,7 +483,8 @@ class OverlayBridge(QObject):
             self._house_cats,
             collar_name,
             stimulation,
-            self,
+            room_stats=self._room_stats,
+            parent=self,
         )
         self._llm_breed_worker.result_ready.connect(self._on_llm_breed_result)
         self._llm_breed_worker.start()
@@ -591,6 +594,7 @@ class OverlayBridge(QObject):
             result[room_name] = {
                 "appeal": rs.appeal,
                 "comfort": rs.comfort,
+                "effective_comfort": rs.effective_comfort,
                 "stimulation": rs.stimulation,
                 "health": rs.health,
                 "mutation": rs.mutation,

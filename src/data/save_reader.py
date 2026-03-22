@@ -233,6 +233,13 @@ class RoomStats:
     cat_count: int = 0
     furniture_count: int = 0
 
+    _CAT_COMFORT_THRESHOLD = 4
+
+    @property
+    def effective_comfort(self) -> int:
+        """Comfort after the per-cat penalty (−1 for each cat above 4)."""
+        return self.comfort - max(0, self.cat_count - self._CAT_COMFORT_THRESHOLD)
+
 
 @dataclass
 class SaveData:
@@ -630,6 +637,12 @@ def _parse_house_info(cursor: sqlite3.Cursor) -> dict[int, str]:
             result[cat_key] = room_name
 
     log.debug("house_state: %d cat-room entries", len(result))
+    empty_rooms = sum(1 for r in result.values() if not r)
+    if empty_rooms:
+        log.warning(
+            "house_state: %d cats have empty room names (unresolved room assignment)",
+            empty_rooms,
+        )
     return result
 
 
@@ -733,22 +746,25 @@ def _count_cats_per_room(room_assignments: dict[int, str]) -> dict[str, int]:
 
 
 def _parse_furniture(cursor: sqlite3.Cursor) -> dict[str, RoomStats]:
-    """Parse furniture table to extract per-room house stats.
+    """Parse furniture table to compute per-room house stats.
 
-    Each furniture blob contains the item name, assigned room, and 5 stat
-    values (Appeal, Comfort, Stimulation, Health, Mutation) packed as i32
-    in the last 20 bytes.
+    Each furniture blob contains the item name and assigned room.  Stat
+    contributions (Appeal, Comfort, Stimulation, Health, Mutation) are
+    looked up from the wiki-sourced ``FURNITURE_STATS`` table by name.
 
     The blob layout is:
       u32 version (1)
-      u32 name_len, u32 pad
-      name bytes (ASCII)
-      u32 room_len, u32 pad
-      room bytes (ASCII)
-      ... positioning / transform data ...
-      last 20 bytes: 5 x i32 house stat contributions
+      u64 name_len              (u32 lo + u32 hi)
+      name bytes (ASCII, name_len)
+      u64 unused_field          (always 0 — empty string slot)
+      u64 room_len              (u32 lo + u32 hi)
+      room bytes (ASCII, room_len)
+      5 x i32 placement metadata
     """
+    from src.data.furniture_stats import FURNITURE_STATS
+
     room_totals: dict[str, RoomStats] = {}
+    unknown_names: set[str] = set()
     try:
         rows = cursor.execute("SELECT key, data FROM furniture").fetchall()
     except sqlite3.Error:
@@ -762,38 +778,46 @@ def _parse_furniture(cursor: sqlite3.Cursor) -> dict[str, RoomStats]:
             r = _BinaryReader(blob)
             r.u32()  # version
             name_len = r.u32()
-            r.u32()  # pad
+            r.u32()  # hi part of u64 (always 0)
             if name_len > 200 or r.pos + name_len > len(blob):
                 continue
-            _furniture_name = blob[r.pos : r.pos + name_len].decode(
+            furniture_name = blob[r.pos : r.pos + name_len].decode(
                 "ascii", errors="ignore"
             )
             r.skip(name_len)
 
+            r.u64()  # unused empty-string field between name and room
+
             room_len = r.u32()
-            r.u32()  # pad
+            r.u32()  # hi part of u64
             if room_len > 100 or r.pos + room_len > len(blob):
                 continue
             room_name = blob[r.pos : r.pos + room_len].decode("ascii", errors="ignore")
-
-            if len(blob) < 20:
-                continue
-            stats_offset = len(blob) - 20
-            vals = struct.unpack_from("<5i", blob, stats_offset)
 
             rs = room_totals.get(room_name)
             if rs is None:
                 rs = RoomStats()
                 room_totals[room_name] = rs
-            rs.appeal += vals[0]
-            rs.comfort += vals[1]
-            rs.stimulation += vals[2]
-            rs.health += vals[3]
-            rs.mutation += vals[4]
             rs.furniture_count += 1
+
+            stats = FURNITURE_STATS.get(furniture_name)
+            if stats is not None:
+                rs.appeal += stats[0]
+                rs.comfort += stats[1]
+                rs.stimulation += stats[2]
+                rs.health += stats[3]
+                rs.mutation += stats[4]
+            else:
+                unknown_names.add(furniture_name)
         except Exception:
             log.debug("Failed to parse furniture #%s", _key, exc_info=True)
 
+    if unknown_names:
+        log.warning(
+            "furniture: %d unknown item(s) not in lookup table: %s",
+            len(unknown_names),
+            ", ".join(sorted(unknown_names)),
+        )
     log.debug("furniture: %d rooms with stats", len(room_totals))
     return room_totals
 
@@ -909,7 +933,10 @@ def read_save(path: str | Path) -> SaveData:
 
         # ── Furniture / room stats ────────────────────────────────────
         room_stats = _parse_furniture(cursor)
+        room_stats.pop("", None)  # drop unplaced furniture
         for room_name, count in _count_cats_per_room(room_assignments).items():
+            if not room_name:
+                continue
             rs = room_stats.get(room_name)
             if rs is None:
                 rs = RoomStats()
@@ -1002,6 +1029,7 @@ def _dump_save_debug(save: SaveData) -> None:
             display = ROOM_DISPLAY.get(room_name, room_name)
             lines.append(
                 f"    {display:24s}  Appeal={rs.appeal:4d}  Comfort={rs.comfort:4d}"
+                f" (eff={rs.effective_comfort:4d})"
                 f"  Stim={rs.stimulation:4d}  Health={rs.health:4d}"
                 f"  Mutation={rs.mutation:4d}  cats={rs.cat_count}  furniture={rs.furniture_count}"
             )

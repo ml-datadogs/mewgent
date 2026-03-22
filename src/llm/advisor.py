@@ -449,6 +449,7 @@ class LLMAdvisor:
         cats: list["SaveCat"],
         collar_name: str,
         stimulation: int = 0,
+        room_stats: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]] | None:
         """Suggest top breeding pairs for a target class using LLM reasoning.
 
@@ -462,14 +463,27 @@ class LLMAdvisor:
             return self._mock_breeding_pairs(cats, collar_name)
 
         cat_summaries = "\n".join(
-            f"  {_cat_summary(c)} | inbreeding={c.breed_coefficient:.2f}"
+            f"  {_cat_summary(c)} | gender={c.gender} "
+            f"| inbreeding={c.breed_coefficient:.2f} | room={c.room}"
             for c in cats[:20]
         )
 
+        room_context = ""
+        if room_stats:
+            room_lines = "\n".join(
+                f"  {name}: appeal={rs.appeal} comfort={rs.comfort} "
+                f"effective_comfort={rs.effective_comfort} "
+                f"stimulation={rs.stimulation} health={rs.health} "
+                f"mutation={rs.mutation} cats={rs.cat_count}"
+                for name, rs in room_stats.items()
+            )
+            room_context = f"Room stats:\n{room_lines}\n\n"
+
         prompt = (
             f"Suggest the best 3 breeding pairs to produce a strong {collar_name} offspring.\n\n"
-            f"Stimulation level: {stimulation}\n\n"
+            f"Stimulation level (override): {stimulation}\n\n"
             f"Available cats:\n{cat_summaries}\n\n"
+            f"{room_context}"
             f"Breeding mechanics:\n{self._breeding_context}\n\n"
             f"Class info:\n{self._wiki_context}\n\n"
             f"Rules:\n"
@@ -477,7 +491,8 @@ class LLMAdvisor:
             f"- Prioritize parents whose stats align with {collar_name} class weights\n"
             f"- Consider ability inheritance -- class abilities are valuable\n"
             f"- Flag inbreeding risks if both parents have high coefficients\n"
-            f"- Consider Stimulation thresholds for guaranteed inheritance\n\n"
+            f"- Consider room Stimulation thresholds for guaranteed inheritance\n"
+            f"- effective_comfort = comfort - max(0, cats - 4); higher means better breeding odds\n\n"
             f"Respond with ONLY a JSON array of 3 objects, each with:\n"
             f"  cat_a_name (str), cat_a_key (int), cat_b_name (str), "
             f"cat_b_key (int), reason (1-2 sentences)\n"
@@ -654,12 +669,14 @@ class LLMAdvisor:
         cat_summaries = "\n".join(
             f"  key={c.db_key} {_cat_summary(c)} | gender={c.gender} "
             f"| inbreeding={c.breed_coefficient:.2f} | room={c.room}"
-            for c in cats[:20]
+            for c in cats[:50]
         )
 
         room_info = "\n".join(
-            f"  {name}: stimulation={rs.stimulation} comfort={rs.comfort} "
-            f"health={rs.health} mutation={rs.mutation} cats={rs.cat_count}"
+            f"  {name}: appeal={rs.appeal} comfort={rs.comfort} "
+            f"effective_comfort={rs.effective_comfort} "
+            f"stimulation={rs.stimulation} health={rs.health} "
+            f"mutation={rs.mutation} cats={rs.cat_count}"
             for name, rs in room_stats.items()
         )
 
@@ -672,7 +689,7 @@ class LLMAdvisor:
             f"- Each room should ideally have one male + one female for breeding\n"
             f"- Pair cats with complementary stats (high + high preferred)\n"
             f"- Place best pairs in rooms with highest stimulation\n"
-            f"- More than 4 cats per room reduces comfort and breeding odds\n"
+            f"- effective_comfort = comfort - max(0, cats - 4); higher means better breeding odds\n"
             f"- Avoid pairing cats with high inbreeding coefficients\n"
             f"- Maximize total expected offspring stat sum across all rooms\n\n"
             f"Respond with ONLY a JSON object:\n"

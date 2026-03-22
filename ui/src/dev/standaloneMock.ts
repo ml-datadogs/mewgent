@@ -150,6 +150,7 @@ export const STANDALONE_ROOM_STATS: Record<string, RoomStats> = {
   Floor1_Large: {
     appeal: 12,
     comfort: 8,
+    effective_comfort: 8,
     stimulation: 45,
     health: 6,
     mutation: 3,
@@ -159,6 +160,7 @@ export const STANDALONE_ROOM_STATS: Record<string, RoomStats> = {
   Attic: {
     appeal: 4,
     comfort: 14,
+    effective_comfort: 14,
     stimulation: 98,
     health: 3,
     mutation: 1,

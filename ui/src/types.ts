@@ -34,6 +34,7 @@ export interface SaveCat {
 export interface RoomStats {
   appeal: number;
   comfort: number;
+  effective_comfort: number;
   stimulation: number;
   health: number;
   mutation: number;

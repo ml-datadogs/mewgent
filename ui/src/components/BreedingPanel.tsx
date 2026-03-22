@@ -312,7 +312,7 @@ function AdviceDetail({ advice, cats }: { advice: BreedingAdvice; cats: SaveCat[
 
 // ── Cat mini badge for room cards ────────────────────────────────────
 
-function CatBadge({ cat }: { cat: SaveCat }) {
+function CatBadge({ cat, highlight }: { cat: SaveCat; highlight?: boolean }) {
   const genderIcon = cat.gender === 'male' ? '\u2642' : '\u2640';
   const genderColor = cat.gender === 'male' ? 'var(--color-stat-int)' : 'var(--color-stat-cha)';
   const inbredLevel = cat.breed_coefficient <= 0.05 ? 'none'
@@ -321,8 +321,11 @@ function CatBadge({ cat }: { cat: SaveCat }) {
 
   return (
     <div
-      className="sketchy-frame rounded-sm px-1.5 py-1 flex items-center gap-1.5"
-      style={{ background: 'rgba(255,255,255,0.3)' }}
+      className={`sketchy-frame rounded-sm px-1.5 py-1 flex items-center gap-1.5 ${highlight ? 'ring-1 ring-good/50' : ''}`}
+      style={{
+        background: highlight ? 'rgba(94,122,58,0.08)' : 'rgba(255,255,255,0.3)',
+        opacity: highlight === undefined ? 1 : highlight ? 1 : 0.6,
+      }}
     >
       <span className="text-[10px] leading-none" style={{ color: genderColor }}>
         {genderIcon}
@@ -374,6 +377,7 @@ function RoomCard({
     : roomCats;
 
   const hasPair = assignment?.best_pair != null;
+  const pairKeys = new Set(assignment?.best_pair ?? []);
   const comfortWarning = stats.cat_count > 4;
 
   return (
@@ -401,17 +405,37 @@ function RoomCard({
           </div>
         </div>
 
-        {/* Room stats */}
-        <div className="flex gap-1">
-          {ROOM_STAT_ICONS.map(({ key, label, color }) => (
-            <div key={key} className="text-center flex-1">
-              <div className="text-[9px] font-mono font-bold tracking-wider" style={{ color }}>{label}</div>
-              <div className="text-[10px] font-mono font-bold tabular-nums text-text">
-                {stats[key]}
-              </div>
-            </div>
-          ))}
-        </div>
+        {/* Room stats or furniture count */}
+        {(stats.stimulation || stats.comfort || stats.health || stats.mutation) ? (
+          <div className="flex gap-1">
+            {ROOM_STAT_ICONS.map(({ key, label, color }) => {
+              const isComfort = key === 'comfort';
+              const value = isComfort ? stats.effective_comfort : stats[key];
+              const penalized = isComfort && stats.effective_comfort < stats.comfort;
+              return (
+                <div key={key} className="text-center flex-1">
+                  <div className="text-[9px] font-mono font-bold tracking-wider" style={{ color }}>{label}</div>
+                  <div className="flex items-baseline justify-center gap-0.5">
+                    <span
+                      className={`text-[10px] font-mono font-bold tabular-nums ${penalized ? 'text-poor' : 'text-text'}`}
+                    >
+                      {value}
+                    </span>
+                    {penalized && (
+                      <span className="text-[8px] font-mono text-text-dim tabular-nums">
+                        /{stats.comfort}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-[9px] font-mono text-text-dim opacity-60">
+            {stats.furniture_count} furniture &middot; stats visible in-game
+          </div>
+        )}
 
         {/* Comfort breeding odds */}
         {assignment?.comfort_breeding_odds && (
@@ -420,12 +444,27 @@ function RoomCard({
           </div>
         )}
 
-        {/* Cat list */}
+        {/* Cat list — breeding pair highlighted, others dimmed */}
         {displayCats.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {displayCats.map((cat) => (
-              <CatBadge key={cat.db_key} cat={cat} />
-            ))}
+          <div className="space-y-1">
+            {pairKeys.size > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {displayCats
+                  .filter((c) => pairKeys.has(c.db_key))
+                  .map((cat) => (
+                    <CatBadge key={cat.db_key} cat={cat} highlight />
+                  ))}
+              </div>
+            )}
+            {displayCats.some((c) => !pairKeys.has(c.db_key)) && (
+              <div className="flex flex-wrap gap-1">
+                {displayCats
+                  .filter((c) => !pairKeys.has(c.db_key))
+                  .map((cat) => (
+                    <CatBadge key={cat.db_key} cat={cat} />
+                  ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-[10px] font-mono text-text-dim opacity-50 py-1">
