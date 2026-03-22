@@ -10,7 +10,11 @@ import { UpdateBanner } from '@/components/UpdateBanner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useBridge } from '@/hooks/useBridge';
 import { autofillTeamLlm } from '@/bridge';
-import { LlmSettingsBar } from '@/components/LlmSettingsBar';
+import {
+  LlmOpenAiForm,
+  LlmOpenAiPopoverTrigger,
+  LlmAiIcon,
+} from '@/components/LlmOpenAiForm';
 
 const pageVariants = {
   initial: { opacity: 0, y: 16 },
@@ -27,7 +31,28 @@ export default function App() {
   const cats = roster.map((r) => r.cat);
   const didAutoFill = useRef(false);
 
-  useEffect(() => { didAutoFill.current = false; }, [mode]);
+  const [homeLlmExpanded, setHomeLlmExpanded] = useState(true);
+  const homeLlmBootstrapped = useRef(false);
+
+  useEffect(() => {
+    didAutoFill.current = false;
+  }, [mode]);
+
+  useEffect(() => {
+    if (!llmSettings?.enabled || homeLlmBootstrapped.current) return;
+    if (!connected && !uiPreview) return;
+    homeLlmBootstrapped.current = true;
+    if (connected && !uiPreview && !llmSettings.mock && llmSettings.available) {
+      setHomeLlmExpanded(false);
+    }
+  }, [llmSettings, connected, uiPreview]);
+
+  useEffect(() => {
+    if (!connected || !llmSettings?.enabled || llmSettings.mock) return;
+    if (!llmSettings.available) {
+      setHomeLlmExpanded(true);
+    }
+  }, [connected, llmSettings?.enabled, llmSettings?.available, llmSettings?.mock]);
 
   useEffect(() => {
     if (mode !== 'team' || didAutoFill.current) return;
@@ -40,6 +65,30 @@ export default function App() {
   }, [mode, connected, team, llmSettings?.available]);
 
   const goHome = () => setMode('home');
+
+  const showHomeLlmLayer = (connected || uiPreview) && !!llmSettings?.enabled;
+
+  const showHomeCollapsedIcon =
+    connected &&
+    !!llmSettings &&
+    llmSettings.available &&
+    !llmSettings.mock &&
+    !uiPreview &&
+    !homeLlmExpanded;
+
+  const showHomeCenterCard = showHomeLlmLayer && !showHomeCollapsedIcon;
+
+  const showHomeDone =
+    connected &&
+    !!llmSettings?.available &&
+    !uiPreview &&
+    !llmSettings?.mock &&
+    homeLlmExpanded;
+
+  const llmTitleSlot =
+    llmSettings?.enabled && connected && !llmSettings.mock ? (
+      <LlmOpenAiPopoverTrigger settings={llmSettings} bridgeConnected={connected} />
+    ) : null;
 
   return (
     <TooltipProvider>
@@ -54,16 +103,49 @@ export default function App() {
                 connected={connected}
                 uiPreview={uiPreview}
               />
+              {showHomeLlmLayer && (
+                <>
+                  {showHomeCenterCard && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center px-4 pointer-events-none">
+                      <div className="pointer-events-auto relative w-full max-w-sm">
+                        {showHomeDone && (
+                          <button
+                            type="button"
+                            className="absolute -right-1 -top-1 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-black/35 text-white text-xs shadow-md hover:bg-black/50"
+                            onClick={() => setHomeLlmExpanded(false)}
+                            aria-label="Hide OpenAI settings"
+                          >
+                            ✕
+                          </button>
+                        )}
+                        <LlmOpenAiForm
+                          bridgeConnected={connected}
+                          settings={llmSettings}
+                          surface="carousel"
+                          onConfigured={() => {
+                            setHomeLlmExpanded(false);
+                            homeLlmBootstrapped.current = true;
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {showHomeCollapsedIcon && llmSettings && (
+                    <div className="absolute bottom-10 left-1/2 z-10 -translate-x-1/2 pointer-events-auto">
+                      <button
+                        type="button"
+                        className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                        title="OpenAI settings"
+                        aria-label="OpenAI settings"
+                        onClick={() => setHomeLlmExpanded(true)}
+                      >
+                        <LlmAiIcon available className="h-9 w-9 border-white/40 bg-black/25 text-good backdrop-blur-sm" />
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-            {(connected || uiPreview) && llmSettings?.enabled && (
-              <div className="shrink-0 max-h-[min(260px,45vh)] overflow-y-auto border-t border-white/10 bg-gradient-to-t from-black/55 via-black/35 to-transparent px-2 pb-2 pt-1.5">
-                <LlmSettingsBar
-                  bridgeConnected={connected}
-                  settings={llmSettings}
-                  onDarkBackground
-                />
-              </div>
-            )}
           </div>
         )}
 
@@ -76,11 +158,10 @@ export default function App() {
                 connected={connected}
                 onBack={goHome}
                 borderless
+                trailingSlot={llmTitleSlot}
               />
 
               {updateInfo && <UpdateBanner info={updateInfo} />}
-
-              <LlmSettingsBar bridgeConnected={connected} settings={llmSettings} />
 
               <motion.div
                 key="breeding"
@@ -123,11 +204,10 @@ export default function App() {
                 connected={connected}
                 onBack={goHome}
                 borderless
+                trailingSlot={llmTitleSlot}
               />
 
               {updateInfo && <UpdateBanner info={updateInfo} />}
-
-              <LlmSettingsBar bridgeConnected={connected} settings={llmSettings} />
 
               <motion.div
                 key="team"

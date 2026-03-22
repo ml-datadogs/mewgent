@@ -31,6 +31,10 @@ import {
   STANDALONE_SYNERGY,
   STANDALONE_TEAM,
 } from '@/dev/standaloneMock';
+import {
+  getMockTeamLlmStatus,
+  subscribeMockTeamLlmStatus,
+} from '@/dev/loaderPreview';
 
 export interface BridgeState {
   connected: boolean;
@@ -56,7 +60,8 @@ export function useBridge(): BridgeState {
   const [team, setTeam] = useState<(TeamSlot | null)[]>([null, null, null, null]);
   const [teamSynergy, setTeamSynergy] = useState('');
   const [saveInfo, setSaveInfo] = useState({ day: 0, cat_count: 0, status: 'Waiting for save data...' });
-  const [llmStatus, setLlmStatus] = useState('');
+  const [llmStatusFromBridge, setLlmStatusFromBridge] = useState('');
+  const [mockTeamLlmStatus, setMockTeamLlmStatus] = useState('');
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [roomStats, setRoomStats] = useState<Record<string, RoomStats>>({});
   const [lastDistribution, setLastDistribution] = useState<DistributionResult | null>(null);
@@ -106,7 +111,7 @@ export function useBridge(): BridgeState {
       onTeamUpdated(setTeam);
       onTeamSynergyUpdated(setTeamSynergy);
       onSaveInfoUpdated(setSaveInfo);
-      onLlmStatusChanged(setLlmStatus);
+      onLlmStatusChanged(setLlmStatusFromBridge);
       onLlmSettingsChanged(setLlmSettings);
       onCollarsUpdated(setCollars);
       onUpdateAvailable(setUpdateInfo);
@@ -114,6 +119,14 @@ export function useBridge(): BridgeState {
       onDistributionResult(setLastDistribution);
     });
   }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || !uiPreview) return;
+    setMockTeamLlmStatus(getMockTeamLlmStatus());
+    return subscribeMockTeamLlmStatus(() => setMockTeamLlmStatus(getMockTeamLlmStatus()));
+  }, [uiPreview]);
+
+  const llmStatus = connected ? llmStatusFromBridge : mockTeamLlmStatus;
 
   return {
     connected,

@@ -59,7 +59,7 @@ export function AiCircleProgress({ active }: { active: boolean }) {
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.9 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="flex flex-col items-center justify-center py-6"
+          className="flex flex-col items-center justify-center"
         >
           <div className="relative" style={{ width: SIZE, height: SIZE }}>
             <svg
@@ -93,25 +93,27 @@ export function AiCircleProgress({ active }: { active: boolean }) {
               />
             </svg>
 
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <AnimatePresence mode="wait">
-                <motion.span
-                  key={label}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.2 }}
-                  className="text-[11px] text-text italic text-center px-4 leading-tight"
-                >
-                  {label}
-                </motion.span>
-              </AnimatePresence>
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="m-auto flex size-fit max-w-[min(100%,11rem)] flex-col items-center gap-1 px-3 text-center">
+                <AnimatePresence mode="wait">
+                  <motion.span
+                    key={label}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.2 }}
+                    className="text-[11px] text-text italic leading-tight"
+                  >
+                    {label}
+                  </motion.span>
+                </AnimatePresence>
 
-              {phase === 'running' && (
-                <span className="text-[10px] font-mono text-text-dim tabular-nums mt-1">
-                  {step + 1}/{STEPS.length}
-                </span>
-              )}
+                {phase === 'running' && (
+                  <span className="text-[10px] font-mono text-text-dim tabular-nums">
+                    {step + 1}/{STEPS.length}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </motion.div>

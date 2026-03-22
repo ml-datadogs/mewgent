@@ -556,8 +556,16 @@ export function BreedingPanel({ cats, roomStats, llmAvailable, bridgeConnected }
     setLoading(true);
     setAdvice(null);
     setSelectedPair(null);
-    suggestDistributionLlm();
-  }, []);
+    if (bridgeConnected) {
+      suggestDistributionLlm();
+      return;
+    }
+    if (import.meta.env.DEV) {
+      window.setTimeout(() => setLoading(false), 15000);
+    } else {
+      setLoading(false);
+    }
+  }, [bridgeConnected]);
 
   const handlePairClick = useCallback(async (aKey: number, bKey: number) => {
     setSelectedPair({ a: aKey, b: bKey });
@@ -584,7 +592,7 @@ export function BreedingPanel({ cats, roomStats, llmAvailable, bridgeConnected }
   }
 
   return (
-    <div className="flex flex-col gap-3 py-1">
+    <div className={`flex flex-col gap-3 py-1${loading ? ' min-h-full' : ''}`}>
       {/* Header + actions */}
       <div className="flex items-center gap-2 px-1">
         <span className="font-mono text-xs font-bold text-accent tracking-wider">
@@ -637,6 +645,7 @@ export function BreedingPanel({ cats, roomStats, llmAvailable, bridgeConnected }
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            className="flex min-h-[min(280px,50vh)] flex-1 flex-col items-center justify-center"
           >
             <AiCircleProgress active={loading} />
           </motion.div>
