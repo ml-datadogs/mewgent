@@ -1,6 +1,6 @@
 # Mewgent
 
-> Live companion overlay for [Mewgenics](https://store.steampowered.com/app/Mewgenics) — real-time cat stats, breeding recommendations, and team management, right on top of your game.
+> Live companion overlay for [Mewgenics](https://store.steampowered.com/app/686060/Mewgenics/) — real-time cat stats, breeding recommendations, and team management, right on top of your game.
 
 | Team | Breeding |
 | :---: | :---: |
@@ -87,6 +87,10 @@ Edit `config/settings.yaml` to customize behavior:
 
 ## Development
 
+### Developer documentation
+
+- [Save file parsing](docs/save-parsing.md) — SQLite layout, LZ4 cat blobs, and how Mewgent reads `.sav` files
+
 ### Run with mock data (no game needed)
 
 Works on macOS and Linux too:
@@ -144,6 +148,7 @@ src/
 ui/                # React + TypeScript frontend
 config/            # settings.yaml
 tests/             # pytest tests + fixtures
+docs/              # Developer docs (e.g. save format)
 ```
 
 ---
