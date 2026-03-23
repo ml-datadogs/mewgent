@@ -36,6 +36,9 @@ jobs:
       - name: Bundle with PyInstaller
         run: uv run pyinstaller mewgent.spec --noconfirm
 
+      # Optional: Authenticode signing (SmartScreen). Needs cert secret + e.g. signtool or osslsigncode.
+      # See README "Windows code signing (optional)".
+
       - name: Create release zip
         run: Compress-Archive -Path dist/mewgent/* -DestinationPath mewgent-${{ github.ref_name }}-win64.zip
 

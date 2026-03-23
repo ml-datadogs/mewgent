@@ -131,6 +131,17 @@ uv run pyinstaller mewgent.spec --noconfirm
 # Output: dist/mewgent/mewgent.exe
 ```
 
+The spec embeds a Windows icon ([`images/mewgent.ico`](images/mewgent.ico)) and version metadata derived from [`pyproject.toml`](pyproject.toml) (File properties / Details in Explorer).
+
+### Windows code signing (optional)
+
+Unsigned builds often trigger SmartScreen warnings for downloaders. To sign the bundle you need an Authenticode certificate (standard code-signing or EV) and a signing step after PyInstaller, for example:
+
+- **signtool** (Windows SDK): sign `dist/mewgent/mewgent.exe` and any other PE files you ship, then repackage the zip.
+- **osslsigncode** or **jsign**: useful on Linux CI if you store the cert as a secret (PFX or cloud HSM).
+
+Typical GitHub Actions pattern: keep the PFX (or signing key reference) in encrypted secrets, run signing on `windows-latest`, then upload the zip to Releases. This repository does not configure signing by default.
+
 ---
 
 ## Project structure
