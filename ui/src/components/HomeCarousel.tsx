@@ -202,7 +202,7 @@ export function HomeCarousel({ onSelect, day, catCount, connected, uiPreview }: 
       <button
         onClick={(e) => { e.stopPropagation(); openUrl('https://t.me/mlshitcheatsheet'); }}
         className="absolute left-3 bottom-3 w-6 h-6 flex items-center justify-center
-          text-white/50 hover:text-white/90 transition-colors cursor-pointer"
+          text-[#229ED9] hover:text-[#54B9E8] transition-colors cursor-pointer"
         title="Telegram"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
