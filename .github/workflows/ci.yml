@@ -18,17 +18,10 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      - name: Install dependencies
-        working-directory: ui
-        run: npm ci
+      - uses: go-task/setup-task@v1
 
-      - name: Lint
-        working-directory: ui
-        run: npm run lint
-
-      - name: Production build
-        working-directory: ui
-        run: npm run build
+      - name: task check:ui
+        run: task check:ui
 
   python_quality:
     name: Lint, type-check, and test Python
@@ -40,17 +33,10 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install dependencies
+      - uses: go-task/setup-task@v1
+
+      - name: Install Python dependencies
         run: uv sync --dev
 
-      - name: Ruff lint
-        run: uv run ruff check .
-
-      - name: Ruff format
-        run: uv run ruff format --check .
-
-      - name: Type check
-        run: uv run ty check
-
-      - name: Tests
-        run: uv run pytest
+      - name: task check:python
+        run: task check:python

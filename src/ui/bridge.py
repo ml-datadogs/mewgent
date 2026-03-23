@@ -650,7 +650,6 @@ class OverlayBridge(QObject):
         if not rooms or not self._house_cats or not self._room_stats:
             return result
 
-        all_keys = {c.db_key for c in self._house_cats}
         assigned: set[int] = set()
         for room in rooms:
             for k in room.get("cat_keys", []):
@@ -686,16 +685,22 @@ class OverlayBridge(QObject):
                     best_headroom = headroom
                     best_room_name = rname
                 elif headroom == best_headroom and best_room_name is not None:
-                    if not room.get("best_pair") and room_by_name[best_room_name].get("best_pair"):
+                    if not room.get("best_pair") and room_by_name[best_room_name].get(
+                        "best_pair"
+                    ):
                         best_room_name = rname
             if best_room_name:
-                room_by_name[best_room_name].setdefault("cat_keys", []).append(cat.db_key)
+                room_by_name[best_room_name].setdefault("cat_keys", []).append(
+                    cat.db_key
+                )
 
         for room in rooms:
             rs = self._room_stats.get(room["room_name"])
             if rs:
                 count = len(room.get("cat_keys", []))
-                room["effective_comfort"] = rs.comfort - max(0, count - COMFORT_CAT_LIMIT)
+                room["effective_comfort"] = rs.comfort - max(
+                    0, count - COMFORT_CAT_LIMIT
+                )
 
         return result
 

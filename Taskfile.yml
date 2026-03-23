@@ -27,13 +27,40 @@ tasks:
     cmds:
       - npm run lint
 
-  check:
-    desc: Run all checks (lint + format check + typecheck)
+  ui:npm-ci:
+    internal: true
+    desc: Install UI dependencies with npm ci
+    dir: ui
+    cmds:
+      - npm ci
+
+  build:ui:compile:
+    internal: true
+    desc: Production Vite build (expects node_modules)
+    dir: ui
+    cmds:
+      - npm run build
+
+  check:ui:
+    desc: CI / parallel job — npm ci, ESLint, Vite production build
+    cmds:
+      - task: ui:npm-ci
+      - task: lint:ui
+      - task: build:ui:compile
+
+  check:python:
+    desc: CI / parallel job — ruff, format check, ty, pytest
     cmds:
       - task: lint
-      - task: lint:ui
       - task: format:check
       - task: typecheck
+      - task: test
+
+  check:
+    desc: All checks (check:ui then check:python — matches full CI surface)
+    cmds:
+      - task: check:ui
+      - task: check:python
 
   fix:
     desc: Auto-fix lint errors and format code
@@ -51,14 +78,13 @@ tasks:
   test:
     desc: Run pytest test suite
     cmds:
-      - uv run pytest tests/ -v
+      - uv run pytest
 
   build:ui:
     desc: Build React frontend
-    dir: ui
     cmds:
-      - npm ci
-      - npm run build
+      - task: ui:npm-ci
+      - task: build:ui:compile
 
   build:exe:
     desc: Bundle into Windows executable with PyInstaller
