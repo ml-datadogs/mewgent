@@ -16,13 +16,18 @@ if TYPE_CHECKING:
 log = logging.getLogger("mewgent.llm.advisor")
 
 _WIKI_DIR = Path(__file__).resolve().parents[2] / "wiki_data" / "text"
+_STRATEGY_PATH = Path(__file__).resolve().parent / "breeding_strategy_context.md"
+# Cap wiki excerpt so bundled community strategy notes are not truncated away.
+_WIKI_BREEDING_MAX_CHARS = 12000
 
 _SYSTEM_PROMPT = """\
 You are an expert advisor for the game Mewgenics. You analyze cat stats, \
 abilities, and class mechanics to recommend optimal class assignments and \
 team compositions. You also provide breeding advice based on inheritance \
-mechanics, house stats, and inbreeding risks. Always respond with valid \
-JSON matching the requested schema.\
+mechanics, house stats, and inbreeding risks. Players may follow conservative \
+(outcrossing) or aggressive (high-inbreeding) breeding philosophies; reflect \
+the roster, coefficients, and room stats you are given. Always respond with \
+valid JSON matching the requested schema.\
 """
 
 _ROLE_TAGS: dict[str, str] = {
@@ -76,14 +81,17 @@ def _load_wiki_context() -> str:
 
 
 def _load_breeding_context() -> str:
-    """Load breeding mechanics wiki data for LLM context."""
-    path = _WIKI_DIR / "breeding.md"
-    if path.exists():
-        text = path.read_text(encoding="utf-8")
-        if len(text) > 15000:
-            text = text[:15000] + "\n[... truncated]"
-        return text
-    return ""
+    """Load breeding mechanics (scraped wiki) plus community strategy notes."""
+    parts: list[str] = []
+    wiki_path = _WIKI_DIR / "breeding.md"
+    if wiki_path.exists():
+        text = wiki_path.read_text(encoding="utf-8")
+        if len(text) > _WIKI_BREEDING_MAX_CHARS:
+            text = text[:_WIKI_BREEDING_MAX_CHARS] + "\n[... truncated]"
+        parts.append(text)
+    if _STRATEGY_PATH.exists():
+        parts.append(_STRATEGY_PATH.read_text(encoding="utf-8"))
+    return "\n\n---\n\n".join(parts)
 
 
 def _cat_summary(cat: SaveCat) -> str:
@@ -556,7 +564,8 @@ class LLMAdvisor:
             f"- Each pair must be different genders (male + female)\n"
             f"- Prioritize parents whose stats align with {collar_name} class weights\n"
             f"- Consider ability inheritance -- class abilities are valuable\n"
-            f"- Flag inbreeding risks if both parents have high coefficients\n"
+            f"- Prefer lower inbreeding coefficients when possible (better defect/disorder odds); "
+            f"if both parents are high, flag the risk and note that some players accept it to consolidate stats\n"
             f"- Consider room Stimulation thresholds for guaranteed inheritance\n"
             f"- effective_comfort = comfort - max(0, cats - 4); higher means better breeding odds\n\n"
             f"Respond with ONLY a JSON array of 3 objects, each with:\n"
@@ -650,7 +659,7 @@ class LLMAdvisor:
             f"Analyze:\n"
             f"1. Stat inheritance outlook for {collar_name}\n"
             f"2. Ability inheritance potential\n"
-            f"3. Inbreeding risk\n"
+            f"3. Inbreeding risk (defect/disorder odds vs aggressive-lineage tradeoffs)\n"
             f"4. Key tips for this Stimulation level\n\n"
             f"Respond with ONLY 2-4 sentences of explanation, no JSON."
         )
@@ -702,11 +711,12 @@ class LLMAdvisor:
         )
         if cat_a.breed_coefficient > 0.2 or cat_b.breed_coefficient > 0.2:
             explanation += (
-                "Watch for inbreeding risk -- consider mixing in stray bloodlines."
+                "Higher inbreeding raises defect odds -- outcross with strays unless you are "
+                "deliberately consolidating a line."
             )
         else:
             explanation += (
-                "Low inbreeding coefficients mean healthy offspring are likely."
+                "Lower inbreeding coefficients favor healthier offspring odds."
             )
 
         key = f"breed:{cat_a.db_key}:{cat_b.db_key}:{collar_name}:0"
@@ -756,7 +766,7 @@ class LLMAdvisor:
             f"- Pair cats with complementary stats (high + high preferred)\n"
             f"- Place best pairs in rooms with highest stimulation\n"
             f"- effective_comfort = comfort - max(0, cats - 4); higher means better breeding odds\n"
-            f"- Avoid pairing cats with high inbreeding coefficients\n"
+            f"- Prefer lower inbreeding pairings when possible; if unavoidable, acknowledge the tradeoff\n"
             f"- Maximize total expected offspring stat sum across all rooms\n\n"
             f"Respond with ONLY a JSON object:\n"
             f'{{"rooms": [{{"room_name": "...", "cat_keys": [int, ...], '

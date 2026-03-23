@@ -77,6 +77,7 @@ datas = [
     (str(ROOT / "ui" / "dist"), os.path.join("ui", "dist")),
     (str(ROOT / "config"), "config"),
     (str(ROOT / "images"), "images"),
+    (str(ROOT / "src" / "llm" / "breeding_strategy_context.md"), "src/llm"),
 ]
 
 env_file = ROOT / "src" / ".env"
