@@ -11,7 +11,7 @@ from src.data.collars import (
 )
 from src.data.save_reader import SaveCat
 from src.data.stat_parser import CatStats, StatValue
-from src.ui.bridge import _compute_viable
+from src.ui.payload import compute_viable
 
 
 def _save_cat(
@@ -106,7 +106,7 @@ class TestComputeViable:
             base_cha=0,
             base_lck=0,
         )
-        out = _compute_viable([adult, kitten], collars)
+        out = compute_viable([adult, kitten], collars)
         assert len(out) == 1
         assert out[0]["cat"]["db_key"] == 1
 
@@ -114,14 +114,14 @@ class TestComputeViable:
         collars = [c for c in COLLARS if c.name in ("Fighter", "Tank")]
         weak = _save_cat(1, "W", (3, 3, 3, 3, 3, 3, 3))
         strong = _save_cat(2, "S", (9, 9, 9, 9, 9, 9, 9))
-        out = _compute_viable([weak, strong], collars)
+        out = compute_viable([weak, strong], collars)
         assert [x["cat"]["db_key"] for x in out] == [2, 1]
         assert out[0]["best_score"] >= out[1]["best_score"]
 
     def test_best_idx_points_at_highest_collar_score(self):
         collars = [c for c in COLLARS if c.name in ("Fighter", "Mage")]
         bruiser = _save_cat(1, "B", (10, 3, 3, 3, 3, 3, 3))
-        out = _compute_viable([bruiser], collars)
+        out = compute_viable([bruiser], collars)
         assert len(out) == 1
         fighter_i = next(i for i, c in enumerate(collars) if c.name == "Fighter")
         mage_i = next(i for i, c in enumerate(collars) if c.name == "Mage")
