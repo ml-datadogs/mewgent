@@ -34,9 +34,8 @@
 
 ## Requirements
 
-- Windows 10/11
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/) package manager
+- **Prebuilt Windows zip** (see [Installation](#installation)): Windows 10/11 only. You do **not** need Python, uv, or Node — run `mewgent.exe` from the extracted folder.
+- **Running from source** (clone + `uv run`): Windows 10/11 for the real save-file overlay; Python 3.11+ and [uv](https://docs.astral.sh/uv/). macOS/Linux work with `uv run python -m src.main --dev-ui` (mock data).
 
 ---
 
@@ -173,6 +172,12 @@ docs/              # Developer docs (e.g. save format)
 
 ---
 
+## Disclaimer
+
+Mewgent is an independent **read-only** companion: it reads your **local** Mewgenics save file to show stats and suggestions in an overlay. It does not modify game files or gameplay. **Use at your own risk.** This project is **not affiliated with or endorsed by** the Mewgenics developers or publishers. **You are responsible** for making sure your use complies with the game’s terms of service, EULA, and any other applicable rules.
+
+---
+
 ## License
 
-[MIT](LICENSE) — not affiliated with or endorsed by the Mewgenics developers.
+[MIT](LICENSE)

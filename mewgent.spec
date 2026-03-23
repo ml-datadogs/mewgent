@@ -3,6 +3,9 @@
 
 Build:  uv run pyinstaller mewgent.spec --noconfirm
 Output: dist/mewgent/mewgent.exe
+
+Never bundle API keys in public releases. ``src/.env`` is included in the
+bundle only when ``MEWGENT_BUNDLE_SRC_ENV=1`` is set (private/debug builds).
 """
 import os
 import tomllib
@@ -80,9 +83,9 @@ datas = [
     (str(ROOT / "src" / "llm" / "breeding_strategy_context.md"), "src/llm"),
 ]
 
-env_file = ROOT / "src" / ".env"
-if env_file.exists():
-    datas.append((str(env_file), "."))
+_env_file = ROOT / "src" / ".env"
+if os.environ.get("MEWGENT_BUNDLE_SRC_ENV") == "1" and _env_file.exists():
+    datas.append((str(_env_file), "."))
 
 wiki_data = ROOT / "wiki_data"
 if wiki_data.exists():
