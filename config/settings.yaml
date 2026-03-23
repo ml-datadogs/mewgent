@@ -3,7 +3,7 @@ database:
   path: "data/mewgent.db"
 
 logging:
-  level: "DEBUG"
+  level: "INFO"
   file: "data/mewgent.log"
 
 save_file:

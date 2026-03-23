@@ -284,7 +284,10 @@ class TestNormalizeGender:
 class TestFindSaveFiles:
     def test_finds_saves(self):
         saves = find_save_files()
-        assert len(saves) >= 1
+        if not saves:
+            pytest.skip(
+                "No Mewgenics save files (normal on CI / machines without the game)"
+            )
         assert any(s.name.endswith(".sav") for s in saves)
 
 

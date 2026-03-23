@@ -6,7 +6,8 @@ on:
   pull_request:
 
 jobs:
-  check:
+  typescript_ui:
+    name: Lint and build TypeScript / React overlay
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,13 +18,23 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      - name: Install frontend dependencies
+      - name: Install dependencies
         working-directory: ui
         run: npm ci
 
-      - name: Lint frontend
+      - name: Lint
         working-directory: ui
         run: npm run lint
+
+      - name: Production build
+        working-directory: ui
+        run: npm run build
+
+  python_quality:
+    name: Lint, type-check, and test Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v6
         with:
@@ -32,11 +43,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Lint
+      - name: Ruff lint
         run: uv run ruff check .
 
-      - name: Format check
+      - name: Ruff format
         run: uv run ruff format --check .
 
       - name: Type check
         run: uv run ty check
+
+      - name: Tests
+        run: uv run pytest

@@ -33,9 +33,6 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --dev
 
-      - name: Create .env for bundling
-        run: echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > src/.env
-
       - name: Bundle with PyInstaller
         run: uv run pyinstaller mewgent.spec --noconfirm
 
