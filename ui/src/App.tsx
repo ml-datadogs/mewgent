@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TitleBar } from '@/components/TitleBar';
 import { HomeCarousel, type AppMode } from '@/components/HomeCarousel';
 import { TeamPanel } from '@/components/TeamPanel';
@@ -10,11 +10,9 @@ import { UpdateBanner } from '@/components/UpdateBanner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useBridge } from '@/hooks/useBridge';
 import { autofillTeamLlm } from '@/bridge';
-import {
-  LlmOpenAiForm,
-  LlmOpenAiPopoverTrigger,
-  LlmAiIcon,
-} from '@/components/LlmOpenAiForm';
+import { cn } from '@/lib/utils';
+import { LlmOpenAiForm, LlmOpenAiPopoverTrigger, LlmAiIcon } from '@/components/LlmOpenAiForm';
+import { getLlmAdvisorTooltip, llmAdvisorTitleAttr } from '@/lib/llmAdvisorCopy';
 
 const pageVariants = {
   initial: { opacity: 0, y: 16 },
@@ -38,11 +36,13 @@ export default function App() {
     didAutoFill.current = false;
   }, [mode]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!llmSettings?.enabled || homeLlmBootstrapped.current) return;
     if (!connected && !uiPreview) return;
     homeLlmBootstrapped.current = true;
     if (connected && !uiPreview && !llmSettings.mock && llmSettings.available) {
+      setHomeLlmExpanded(false);
+    } else if (uiPreview && !llmSettings.mock) {
       setHomeLlmExpanded(false);
     }
   }, [llmSettings, connected, uiPreview]);
@@ -69,21 +69,18 @@ export default function App() {
   const showHomeLlmLayer = (connected || uiPreview) && !!llmSettings?.enabled;
 
   const showHomeCollapsedIcon =
-    connected &&
     !!llmSettings &&
-    llmSettings.available &&
+    llmSettings.enabled &&
     !llmSettings.mock &&
-    !uiPreview &&
-    !homeLlmExpanded;
+    !homeLlmExpanded &&
+    ((connected && llmSettings.available) || uiPreview);
 
   const showHomeCenterCard = showHomeLlmLayer && !showHomeCollapsedIcon;
 
   const showHomeDone =
-    connected &&
-    !!llmSettings?.available &&
-    !uiPreview &&
+    homeLlmExpanded &&
     !llmSettings?.mock &&
-    homeLlmExpanded;
+    (uiPreview || (connected && !!llmSettings?.available));
 
   const llmTitleSlot =
     llmSettings?.enabled && connected && !llmSettings.mock ? (
@@ -131,16 +128,40 @@ export default function App() {
                     </div>
                   )}
                   {showHomeCollapsedIcon && llmSettings && (
-                    <div className="absolute bottom-10 left-1/2 z-10 -translate-x-1/2 pointer-events-auto">
-                      <button
-                        type="button"
-                        className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-white/60"
-                        title="OpenAI settings"
-                        aria-label="OpenAI settings"
-                        onClick={() => setHomeLlmExpanded(true)}
+                    <div className="absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5 pointer-events-auto">
+                      <Tooltip delayDuration={400}>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="group rounded-full outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                            title={llmAdvisorTitleAttr(llmSettings.available)}
+                            aria-label={`${llmSettings.available ? 'AI advisor on' : 'AI advisor off'} — Open OpenAI settings. ${getLlmAdvisorTooltip(llmSettings.available)}`}
+                            onClick={() => setHomeLlmExpanded(true)}
+                          >
+                            <LlmAiIcon
+                              available={llmSettings.available}
+                              className={cn(
+                                'h-9 w-9 backdrop-blur-sm',
+                                llmSettings.available
+                                  ? 'border-white/35 bg-black/20 group-hover:border-good/70 group-hover:bg-good/25'
+                                  : 'border-white/30 border-dashed bg-black/30 group-hover:border-amber-200/50 group-hover:bg-black/40',
+                              )}
+                            />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="max-w-[16rem] border-white/20 bg-black/90 text-left text-[11px] leading-snug text-white shadow-lg"
+                        >
+                          {getLlmAdvisorTooltip(llmSettings.available)}
+                        </TooltipContent>
+                      </Tooltip>
+                      <span
+                        className="pointer-events-none max-w-[11rem] text-center font-mono text-[10px] font-bold tracking-wide text-white/75 drop-shadow-md"
+                        style={{ textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}
                       >
-                        <LlmAiIcon available className="h-9 w-9 border-white/40 bg-black/25 text-good backdrop-blur-sm" />
-                      </button>
+                        {llmSettings.available ? 'OpenAI settings' : 'Tap to enable AI'}
+                      </span>
                     </div>
                   )}
                 </>

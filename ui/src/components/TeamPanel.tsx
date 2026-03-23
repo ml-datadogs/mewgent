@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { TeamSlotCard } from '@/components/TeamSlot';
 import { AiCircleProgress } from '@/components/AiCircleProgress';
-import { clearTeam } from '@/bridge';
+import { autofillTeamLlm, clearTeam } from '@/bridge';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
 import type { TeamSlot, CollarDef } from '@/types';
 
@@ -28,6 +28,7 @@ export function TeamPanel({
   team,
   collars,
   llmStatus,
+  llmAvailable,
   bridgeConnected,
   teamSynergy,
 }: TeamPanelProps) {
@@ -39,11 +40,22 @@ export function TeamPanel({
     <div
       className={`flex flex-col gap-3 py-1${isLoading ? ' min-h-full h-full' : ''}`}
     >
-      <div className="flex items-center gap-2 px-1">
+      <div className="flex items-center gap-2 px-1 flex-wrap">
         <span className="font-mono text-xs font-bold text-accent tracking-wider">
           TEAM
         </span>
-        <div className="flex-1" />
+        <div className="flex-1 min-w-[1rem]" />
+        {llmAvailable && !isLoading && (
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => autofillTeamLlm()}
+            disabled={!bridgeConnected}
+            title={!bridgeConnected ? 'Requires Mewgent app' : 'Fill team with AI suggestions'}
+          >
+            AI fill
+          </Button>
+        )}
         {!isLoading && <TeamScore value={totalScore} />}
       </div>
 

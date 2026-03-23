@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { applyLlmSettings, type LlmSettings } from '@/bridge';
+import { getLlmAdvisorTooltip, llmAdvisorTitleAttr } from '@/lib/llmAdvisorCopy';
 import { cn } from '@/lib/utils';
 
 export interface LlmOpenAiFormProps {
@@ -195,25 +197,46 @@ export function LlmAiIcon({ available, className }: { available: boolean; classN
   return (
     <span
       className={cn(
-        'inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors',
+        'relative inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-visible rounded-full border p-1',
+        'transition-[transform,box-shadow,border-color,background-color,filter] duration-200 ease-out',
+        'group-hover:scale-[1.07] group-hover:-translate-y-px group-active:scale-100',
         available
-          ? 'border-good/50 bg-good/15 text-good'
-          : 'border-amber-700/40 bg-amber-500/10 text-amber-900/80',
+          ? [
+              'border-good/55 bg-good/20 shadow-[0_0_0_1px_rgba(74,222,128,0.12)]',
+              'group-hover:border-good/85 group-hover:bg-good/30',
+              'group-hover:shadow-[0_0_14px_rgba(74,222,128,0.35),0_2px_8px_rgba(0,0,0,0.12)]',
+            ]
+          : [
+              'border-dashed border-amber-800/55 bg-amber-500/[0.08]',
+              'group-hover:border-amber-600/70 group-hover:bg-amber-500/15',
+              'group-hover:shadow-[0_0_10px_rgba(245,158,11,0.2)]',
+            ],
         className,
       )}
       aria-hidden
     >
-      {available ? (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-          <polyline points="22 4 12 14.01 9 11.01" />
-        </svg>
-      ) : (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 8v4M12 16h.01" />
-        </svg>
-      )}
+      <img
+        src="/brainchip.png"
+        alt=""
+        draggable={false}
+        className={cn(
+          'h-full w-full object-contain select-none transition-[opacity,filter,transform] duration-200',
+          available
+            ? 'opacity-100 group-hover:brightness-110 group-hover:contrast-105'
+            : 'opacity-55 grayscale contrast-90 group-hover:opacity-80 group-hover:grayscale-[35%]',
+        )}
+      />
+      <span
+        className={cn(
+          'pointer-events-none absolute bottom-0 right-0 z-[1] size-2 rounded-full border-2 border-black/20',
+          'transition-[background-color,box-shadow,transform] duration-200',
+          'group-hover:scale-110',
+          available
+            ? 'bg-good shadow-[0_0_8px_rgba(74,222,128,0.85)]'
+            : 'bg-text-dim/55 shadow-none group-hover:bg-text-dim/70',
+        )}
+        aria-hidden
+      />
     </span>
   );
 }
@@ -231,19 +254,30 @@ export function LlmOpenAiPopoverTrigger({
     return null;
   }
 
+  const advisorLabel = settings.available
+    ? 'AI advisor on — OpenAI settings'
+    : 'AI advisor off — add API key in settings';
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-          title="OpenAI settings"
-          aria-label="OpenAI settings"
-          aria-expanded={open}
-        >
-          <LlmAiIcon available={settings.available} />
-        </button>
-      </PopoverTrigger>
+      <Tooltip delayDuration={400}>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="group rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+              title={llmAdvisorTitleAttr(settings.available)}
+              aria-label={`${advisorLabel}. ${getLlmAdvisorTooltip(settings.available)}`}
+              aria-expanded={open}
+            >
+              <LlmAiIcon available={settings.available} />
+            </button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="end" className="max-w-[15rem] text-left leading-snug">
+          {getLlmAdvisorTooltip(settings.available)}
+        </TooltipContent>
+      </Tooltip>
       <PopoverContent className="border-border p-0" align="end" sideOffset={8}>
         <LlmOpenAiForm
           bridgeConnected={bridgeConnected}

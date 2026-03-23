@@ -108,7 +108,7 @@ export function HomeCarousel({ onSelect, day, catCount, connected, uiPreview }: 
               className="absolute inset-0"
               style={{ background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.35) 100%)' }}
             />
-            <div className="absolute inset-0 flex flex-col items-center justify-end pb-6 gap-2">
+            <div className="absolute inset-0 flex flex-col items-center justify-end pb-8 gap-2">
               <span
                 className="font-mono text-2xl font-bold tracking-[0.25em] text-white/90 drop-shadow-lg"
                 style={{ textShadow: '0 2px 12px rgba(0,0,0,0.7)' }}
@@ -116,7 +116,7 @@ export function HomeCarousel({ onSelect, day, catCount, connected, uiPreview }: 
                 {card.title}
               </span>
               <motion.span
-                className="flex items-center gap-1 text-[11px] font-mono text-white/50 tracking-wider"
+                className="flex items-center gap-1 text-[11px] font-mono text-white/50 tracking-wider mb-1"
                 animate={{ opacity: [0.4, 0.8, 0.4] }}
                 transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
               >
