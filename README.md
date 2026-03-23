@@ -1,6 +1,18 @@
 # Mewgent
 
+<p align="center">
+  <img src="images/mewgent-logo.jpg" alt="Mewgent mascot — cat agent companion" width="420" />
+</p>
+
 > Live companion overlay for [Mewgenics](https://store.steampowered.com/app/686060/Mewgenics/) — real-time cat stats, breeding recommendations, and team management, right on top of your game.
+
+**Windows:** [Download the latest release](https://github.com/ml-datadogs/mewgent/releases) — each version ships as `mewgent-vX.Y.Z-win64.zip` with `mewgent.exe` inside.
+
+### Why Mewgent?
+
+**The problem:** Mewgenics gives you a lot to juggle — stats, collars, room assignments, and breeding genetics. Without a second screen, that often means tabbing to wikis, notes, or spreadsheets and losing your place in the game.
+
+**The solution:** Mewgent is a **live companion** that watches your save file and refreshes on a short interval. It shows cat stats, breeding pair scores, and roster context in an **always-on-top overlay** so you can decide without leaving the game. Optional **LLM** help adds plain-language breeding strategy on top of the built-in scoring.
 
 | Team | Breeding |
 | :---: | :---: |
@@ -29,6 +41,12 @@
 ---
 
 ## Installation
+
+### Prebuilt Windows (recommended)
+
+Every [GitHub Release](https://github.com/ml-datadogs/mewgent/releases) for this repo includes a zip named like `mewgent-v1.0.0-win64.zip`. Download it, extract all files into a folder, and run `mewgent.exe`. No Python or build tools required.
+
+### From source
 
 ```bash
 # 1. Install uv (if not already installed)
@@ -132,15 +150,6 @@ uv run pyinstaller mewgent.spec --noconfirm
 ```
 
 The spec embeds a Windows icon ([`images/mewgent.ico`](images/mewgent.ico)) and version metadata derived from [`pyproject.toml`](pyproject.toml) (File properties / Details in Explorer).
-
-### Windows code signing (optional)
-
-Unsigned builds often trigger SmartScreen warnings for downloaders. To sign the bundle you need an Authenticode certificate (standard code-signing or EV) and a signing step after PyInstaller, for example:
-
-- **signtool** (Windows SDK): sign `dist/mewgent/mewgent.exe` and any other PE files you ship, then repackage the zip.
-- **osslsigncode** or **jsign**: useful on Linux CI if you store the cert as a secret (PFX or cloud HSM).
-
-Typical GitHub Actions pattern: keep the PFX (or signing key reference) in encrypted secrets, run signing on `windows-latest`, then upload the zip to Releases. This repository does not configure signing by default.
 
 ---
 
