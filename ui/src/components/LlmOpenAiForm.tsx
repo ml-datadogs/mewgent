@@ -216,11 +216,13 @@ export function LlmAiIcon({ available, className }: { available: boolean; classN
       aria-hidden
     >
       <img
-        src="/brainchip.png"
+        src={`${import.meta.env.BASE_URL}brainchip.png`}
         alt=""
         draggable={false}
         className={cn(
-          'h-full w-full object-contain select-none transition-[opacity,filter,transform] duration-200',
+          // Transparent PNG pixels can let hits pass through to layers below in embedded Chromium;
+          // parent span/button keeps a solid hover target.
+          'pointer-events-none h-full w-full object-contain select-none transition-[opacity,filter,transform] duration-200',
           available
             ? 'opacity-100 group-hover:brightness-110 group-hover:contrast-105'
             : 'opacity-55 grayscale contrast-90 group-hover:opacity-80 group-hover:grayscale-[35%]',

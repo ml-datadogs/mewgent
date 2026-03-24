@@ -63,12 +63,12 @@ export function TitleBar({ day, catCount, connected, onBack, borderless, trailin
         )}
         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/15 p-0.5 ring-1 ring-accent/20">
           <img
-            src="/brainchip.png"
+            src={`${import.meta.env.BASE_URL}brainchip.png`}
             alt=""
             width={20}
             height={20}
             draggable={false}
-            className="h-full w-full object-contain select-none"
+            className="pointer-events-none h-full w-full object-contain select-none"
             aria-hidden
           />
         </div>
