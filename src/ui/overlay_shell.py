@@ -15,7 +15,11 @@ import uuid
 from PySide6.QtCore import QSettings, QThread, QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QIcon
 from PySide6.QtWebChannel import QWebChannel
-from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+from PySide6.QtWebEngineCore import (
+    QWebEnginePage,
+    QWebEngineProfile,
+    QWebEngineSettings,
+)
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication,
@@ -194,11 +198,17 @@ class OverlayShell(QMainWindow):
             profile = QWebEngineProfile.defaultProfile()
             profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.NoCache)
 
-        self._web_view.page().setBackgroundColor(QColor(0, 0, 0, 0))
+        page = self._web_view.page()
+        page.settings().setAttribute(
+            QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls,
+            True,
+        )
 
-        channel = QWebChannel(self._web_view.page())
+        page.setBackgroundColor(QColor(0, 0, 0, 0))
+
+        channel = QWebChannel(page)
         channel.registerObject("bridge", self._bridge)
-        self._web_view.page().setWebChannel(channel)
+        page.setWebChannel(channel)
 
         if self._dev_mode:
             # Bust document cache; Vite ignores unknown query params on /.

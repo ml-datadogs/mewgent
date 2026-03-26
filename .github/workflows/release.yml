@@ -26,6 +26,22 @@ jobs:
           npm ci
           npm run build
 
+      - name: Verify brainchip inlined in UI bundle
+        shell: pwsh
+        run: |
+          if (-not (Test-Path ui/src/assets/brainchip.png)) {
+            throw 'ui/src/assets/brainchip.png missing'
+          }
+          $hasPng = $false
+          Get-ChildItem ui/dist/assets/*.js | ForEach-Object {
+            if (Select-String -Path $_.FullName -SimpleMatch 'data:image/png;base64,iVBORw0KGgo' -Quiet) {
+              $hasPng = $true
+            }
+          }
+          if (-not $hasPng) {
+            throw 'expected brainchip PNG inlined in ui/dist/assets/*.js'
+          }
+
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
