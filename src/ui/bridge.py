@@ -11,7 +11,7 @@ import logging
 from dataclasses import asdict
 from typing import Any
 
-from PySide6.QtCore import QObject, QThread, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QThread, QUrl, Qt, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 
 from src.breeding.calculator import (
@@ -30,7 +30,11 @@ from src.data.collars import (
     unlocked_collars,
 )
 from src.data.save_reader import RoomStats, SaveCat, SaveData
-from src.llm.advisor import LLMAdvisor, build_llm_advisor
+from src.llm.advisor import (
+    LLMAdvisor,
+    build_llm_advisor,
+    verify_openai_api_key,
+)
 from src.ui.payload import (
     cat_to_dict as _cat_dict,
     collar_to_dict as _collar_dict,
@@ -118,6 +122,28 @@ class _LLMDistributionWorker(QThread):
             self.result_ready.emit(None)
 
 
+class _LLMVerifyWorker(QThread):
+    """Verify OpenAI API key off the main thread (HTTP GET /v1/models)."""
+
+    finished_ok = Signal(int, bool, str)
+
+    def __init__(
+        self, req_id: int, api_key: str, parent: QObject | None = None
+    ) -> None:
+        super().__init__(parent)
+        self._req_id = req_id
+        self._api_key = api_key
+
+    def run(self) -> None:
+        try:
+            ok, msg = verify_openai_api_key(self._api_key)
+        except Exception:
+            log.exception("LLM verify worker crashed")
+            ok, msg = False, "Could not verify OpenAI connection."
+        log.info("LLM verify worker finished req=%s ok=%s", self._req_id, ok)
+        self.finished_ok.emit(self._req_id, ok, msg)
+
+
 class OverlayBridge(QObject):
     """QObject exposed to JavaScript via QWebChannel."""
 
@@ -153,6 +179,8 @@ class OverlayBridge(QObject):
         self._room_stats: dict[str, RoomStats] = {}
 
         self._llm = build_llm_advisor(cfg.llm)
+        self._llm_verify_req: int = 0
+        self._llm_verify_worker: _LLMVerifyWorker | None = None
 
     def set_shell(self, shell) -> None:
         """Store a reference to the OverlayShell for window management."""
@@ -193,6 +221,46 @@ class OverlayBridge(QObject):
             self._llm.settings_snapshot(default_model=self._cfg.llm.model)
         )
 
+    def _emit_llm_settings(self) -> None:
+        snap = self._llm.settings_snapshot(default_model=self._cfg.llm.model)
+        self.llm_settings_changed.emit(json.dumps(snap))
+
+    @Slot(int, bool, str)
+    def _on_llm_verify_done(self, req_id: int, ok: bool, msg: str) -> None:
+        if req_id != self._llm_verify_req:
+            log.debug(
+                "Ignoring stale LLM verify result req=%s (current=%s)",
+                req_id,
+                self._llm_verify_req,
+            )
+            return
+        self._llm.connection_set_result(ok, msg)
+        self._emit_llm_settings()
+
+    def _start_llm_verify(self) -> None:
+        if not self._llm.can_verify_openai():
+            return
+        key = self._llm.effective_api_key()
+        if not key:
+            self._llm.connection_set_result(False, "No API key configured.")
+            self._emit_llm_settings()
+            return
+        old = self._llm_verify_worker
+        if old is not None:
+            try:
+                old.finished_ok.disconnect(self._on_llm_verify_done)
+            except TypeError:
+                pass
+        self._llm_verify_req += 1
+        rid = self._llm_verify_req
+        w = _LLMVerifyWorker(rid, key, self)
+        self._llm_verify_worker = w
+        w.finished_ok.connect(
+            self._on_llm_verify_done,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        w.start()
+
     @Slot(str, result=str)
     def apply_llm_settings(self, payload: str) -> str:
         try:
@@ -204,18 +272,30 @@ class OverlayBridge(QObject):
             key_value = str(data.get("api_key", ""))
             if key_action not in ("unchanged", "set", "clear"):
                 key_action = "unchanged"
+            trimmed_set = key_action == "set" and key_value.strip() != ""
             self._llm.apply_ui_settings(
                 default_model=self._cfg.llm.model,
                 model=model or self._cfg.llm.model,
                 key_action=key_action,
                 key_value=key_value,
             )
-            snap = self._llm.settings_snapshot(default_model=self._cfg.llm.model)
-            self.llm_settings_changed.emit(json.dumps(snap))
+            if trimmed_set:
+                self._llm.connection_set_pending()
+            self._emit_llm_settings()
+            if trimmed_set:
+                self._start_llm_verify()
             return json.dumps({"ok": True})
         except Exception as e:
             log.exception("apply_llm_settings failed")
             return json.dumps({"ok": False, "error": str(e)})
+
+    @Slot()
+    def test_llm_connection(self) -> None:
+        if not self._llm.can_verify_openai():
+            return
+        self._llm.connection_set_pending()
+        self._emit_llm_settings()
+        self._start_llm_verify()
 
     @Slot(result=str)
     def get_room_stats(self) -> str:
@@ -471,20 +551,29 @@ class OverlayBridge(QObject):
         rankings = rank_pairs_overall(self._house_cats, room_stats=self._room_stats)
         return json.dumps([asdict(r) for r in rankings])
 
+    def _emit_distribution_error(self, message: str) -> None:
+        self.distribution_result.emit(
+            json.dumps(
+                {
+                    "source": "error",
+                    "distribution": None,
+                    "error": message,
+                }
+            )
+        )
+
     @Slot()
     def suggest_distribution_llm(self) -> None:
         """Request LLM-powered room distribution (async)."""
-        if not self._llm.available or len(self._house_cats) < 2:
-            dist = None
-            if self._house_cats and self._room_stats:
-                dist = suggest_room_distribution(self._house_cats, self._room_stats)
-            self.distribution_result.emit(
-                json.dumps(
-                    {
-                        "source": "calculator",
-                        "distribution": asdict(dist) if dist else None,
-                    }
-                )
+        if len(self._house_cats) < 2:
+            self._emit_distribution_error("Need at least 2 cats in the house.")
+            return
+        if not self._room_stats:
+            self._emit_distribution_error("No room data loaded.")
+            return
+        if not self._llm.available:
+            self._emit_distribution_error(
+                "OpenAI advisor is not available. Add an API key or enable the advisor."
             )
             return
 
@@ -699,20 +788,18 @@ class OverlayBridge(QObject):
     @Slot(object)
     def _on_llm_distribution_result(self, result: dict | None) -> None:
         self.llm_status_changed.emit("")
-        if result and isinstance(result, dict):
+        if result and isinstance(result, dict) and result.get("rooms"):
             result = self._backfill_llm_distribution(result)
-            self.distribution_result.emit(
-                json.dumps({"source": "llm", "distribution": result})
-            )
-        else:
-            dist = None
-            if self._house_cats and self._room_stats:
-                dist = suggest_room_distribution(self._house_cats, self._room_stats)
             self.distribution_result.emit(
                 json.dumps(
                     {
-                        "source": "calculator",
-                        "distribution": asdict(dist) if dist else None,
+                        "source": "llm",
+                        "distribution": result,
+                        "error": None,
                     }
                 )
+            )
+        else:
+            self._emit_distribution_error(
+                "Could not get room distribution from the model."
             )

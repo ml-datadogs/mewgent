@@ -1,6 +1,5 @@
 import { useRef, useCallback, useEffect, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
-import brainchipUrl from '@/assets/brainchip.png';
 import { Badge } from '@/components/ui/badge';
 import { UpdateCheckButton } from '@/components/UpdateCheckButton';
 import { requestClose, beginDrag, updateDrag, endDrag } from '@/bridge';
@@ -62,17 +61,6 @@ export function TitleBar({ day, catCount, connected, onBack, borderless, trailin
             &#8592;
           </motion.button>
         )}
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/15 p-0.5 ring-1 ring-accent/20">
-          <img
-            src={brainchipUrl}
-            alt=""
-            width={20}
-            height={20}
-            draggable={false}
-            className="pointer-events-none h-full w-full object-contain select-none"
-            aria-hidden
-          />
-        </div>
         <span className="text-sm font-serif font-bold text-accent tracking-wide">
           Mewgent
         </span>

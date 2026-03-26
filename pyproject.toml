@@ -1,6 +1,6 @@
 [project]
 name = "mewgent"
-version = "0.2.2"
+version = "0.2.3"
 description = "Live Mewgenics companion app — reads save files and provides breeding advice"
 readme = "README.md"
 requires-python = ">=3.11"

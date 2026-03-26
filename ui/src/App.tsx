@@ -23,8 +23,6 @@ const pageVariants = {
 export default function App() {
   const { connected, uiPreview, roster, collars, team, teamSynergy, saveInfo, llmStatus, updateInfo, roomStats, llmSettings } =
     useBridge();
-  const showAiControls =
-    uiPreview || (connected && llmSettings !== null && llmSettings.available);
   const [mode, setMode] = useState<'home' | AppMode>('home');
   const cats = roster.map((r) => r.cat);
   const didAutoFill = useRef(false);
@@ -33,7 +31,9 @@ export default function App() {
   const homeLlmBootstrapped = useRef(false);
 
   useEffect(() => {
-    didAutoFill.current = false;
+    if (mode !== 'team') {
+      didAutoFill.current = false;
+    }
   }, [mode]);
 
   useLayoutEffect(() => {
@@ -55,13 +55,16 @@ export default function App() {
   }, [connected, llmSettings?.enabled, llmSettings?.available, llmSettings?.mock]);
 
   useEffect(() => {
-    if (mode !== 'team' || didAutoFill.current) return;
+    if (mode !== 'team') return;
     if (!connected || !llmSettings?.available) return;
     const isEmpty = team.every((s) => s === null);
-    if (isEmpty) {
-      didAutoFill.current = true;
-      autofillTeamLlm();
+    if (!isEmpty) {
+      didAutoFill.current = false;
+      return;
     }
+    if (didAutoFill.current) return;
+    didAutoFill.current = true;
+    autofillTeamLlm();
   }, [mode, connected, team, llmSettings?.available]);
 
   const goHome = () => setMode('home');
@@ -198,8 +201,8 @@ export default function App() {
                     <BreedingPanel
                       cats={cats}
                       roomStats={roomStats}
-                      llmAvailable={showAiControls}
                       bridgeConnected={connected}
+                      autoOptimize={connected && !!llmSettings?.available}
                     />
                   ) : (
                     <div className="parchment-empty rounded-lg flex items-center justify-center h-[200px]">
@@ -244,7 +247,6 @@ export default function App() {
                     team={team}
                     collars={collars}
                     llmStatus={llmStatus}
-                    llmAvailable={showAiControls}
                     bridgeConnected={connected}
                     teamSynergy={teamSynergy}
                   />

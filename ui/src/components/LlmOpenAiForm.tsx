@@ -3,7 +3,18 @@ import brainchipUrl from '@/assets/brainchip.png';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { applyLlmSettings, type LlmSettings } from '@/bridge';
+import {
+  applyLlmSettings,
+  testLlmConnection,
+  type LlmSettings,
+} from '@/bridge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { getLlmAdvisorTooltip, llmAdvisorTitleAttr } from '@/lib/llmAdvisorCopy';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +26,35 @@ export interface LlmOpenAiFormProps {
   className?: string;
   /** After successful Apply (save key or update model) */
   onConfigured?: () => void;
+}
+
+function ModelPicker({
+  modelOptions,
+  value,
+  onChange,
+  disabled,
+  id,
+}: {
+  modelOptions: string[];
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  id?: string;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger id={id} className="w-full" aria-label="OpenAI model">
+        <SelectValue placeholder="Model" />
+      </SelectTrigger>
+      <SelectContent>
+        {modelOptions.map((m) => (
+          <SelectItem key={m} value={m}>
+            {m}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 function surfaceShell(surface: 'carousel' | 'panel', className?: string) {
@@ -59,17 +99,7 @@ export function LlmOpenAiForm({
         </p>
         <div className="flex flex-col gap-1.5 opacity-60 pointer-events-none">
           <label className="text-[9px] font-mono font-bold text-text-dim tracking-wider">Model</label>
-          <select
-            value={model}
-            disabled
-            className="w-full text-[11px] font-mono rounded border border-black/15 bg-white/60 px-2 py-1 text-text"
-          >
-            {modelOptions.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+          <ModelPicker modelOptions={modelOptions} value={model} onChange={() => {}} disabled />
           <label className="text-[9px] font-mono font-bold text-text-dim tracking-wider">API key</label>
           <input
             type="password"
@@ -97,6 +127,9 @@ export function LlmOpenAiForm({
   }
 
   const modelOptions = settings.models.includes(model) ? settings.models : [model, ...settings.models];
+  const connectionPending = settings.connection_check === 'pending';
+  const canTestConnection =
+    settings.available || settings.has_saved_key;
 
   const onApply = async () => {
     setBusy(true);
@@ -139,19 +172,19 @@ export function LlmOpenAiForm({
     <div className={cn('flex flex-col gap-2 px-2 py-2', shell)}>
       <span className="text-[10px] font-mono font-bold text-accent tracking-wider">OPENAI</span>
       <div className="flex flex-col gap-1.5">
-        <label className="text-[9px] font-mono font-bold text-text-dim tracking-wider">Model</label>
-        <select
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          disabled={busy}
-          className="w-full text-[11px] font-mono rounded border border-black/15 bg-white/60 px-2 py-1 text-text"
+        <label
+          htmlFor="llm-model-select"
+          className="text-[9px] font-mono font-bold text-text-dim tracking-wider"
         >
-          {modelOptions.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
+          Model
+        </label>
+        <ModelPicker
+          id="llm-model-select"
+          modelOptions={modelOptions}
+          value={model}
+          onChange={setModel}
+          disabled={busy}
+        />
       </div>
       <div className="flex flex-col gap-1.5">
         <label className="text-[9px] font-mono font-bold text-text-dim tracking-wider">API key</label>
@@ -183,8 +216,28 @@ export function LlmOpenAiForm({
             Clear saved key
           </Button>
         )}
+        <Button
+          size="sm"
+          variant="ghost"
+          type="button"
+          disabled={busy || connectionPending || !canTestConnection}
+          onClick={() => testLlmConnection()}
+        >
+          Test connection
+        </Button>
       </div>
       {message && <p className="text-[9px] font-mono text-text-dim">{message}</p>}
+      {connectionPending && (
+        <p className="text-[9px] font-mono text-text-dim">Checking OpenAI connection…</p>
+      )}
+      {settings.connection_check === 'ok' && !connectionPending && (
+        <p className="text-[9px] font-mono text-good">
+          Connected — OpenAI API responded successfully.
+        </p>
+      )}
+      {settings.connection_check === 'failed' && settings.connection_message && (
+        <p className="text-[9px] font-mono text-amber-900/90">{settings.connection_message}</p>
+      )}
       {!settings.available && (
         <p className="text-[9px] font-mono text-amber-800/90">
           AI actions need a valid API key (saved or environment).

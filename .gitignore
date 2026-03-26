@@ -26,6 +26,7 @@ data/*.db-wal
 data/*.pid
 data/*.log
 data/*.log.*
+data/openai_user_settings.json
 debug_screenshots/
 *.log
 
