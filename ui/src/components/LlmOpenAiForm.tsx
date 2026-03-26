@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import brainchipUrl from '@/assets/brainchip.png';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -216,7 +217,7 @@ export function LlmAiIcon({ available, className }: { available: boolean; classN
       aria-hidden
     >
       <img
-        src={`${import.meta.env.BASE_URL}brainchip.png`}
+        src={brainchipUrl}
         alt=""
         draggable={false}
         className={cn(
