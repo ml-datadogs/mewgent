@@ -37,6 +37,7 @@ interface BridgeObject {
   check_for_updates: () => void;
   get_llm_settings: (cb: (json: string) => void) => void;
   apply_llm_settings: (payload_json: string, cb: (json: string) => void) => void;
+  test_llm_connection: () => void;
 
   roster_updated: { connect: (fn: (json: string) => void) => void };
   team_updated: { connect: (fn: (json: string) => void) => void };
@@ -158,6 +159,8 @@ export function onLlmStatusChanged(fn: (status: string) => void) {
 
 // ── LLM (BYOK + model) ───────────────────────────────────────────
 
+export type LlmConnectionCheck = 'idle' | 'pending' | 'ok' | 'failed';
+
 export interface LlmSettings {
   model: string;
   default_model: string;
@@ -166,6 +169,8 @@ export interface LlmSettings {
   available: boolean;
   mock: boolean;
   enabled: boolean;
+  connection_check: LlmConnectionCheck;
+  connection_message: string;
 }
 
 export interface LlmApplyPayload {
@@ -203,6 +208,10 @@ export function applyLlmSettings(payload: LlmApplyPayload): Promise<{ ok: boolea
   });
 }
 
+export function testLlmConnection(): void {
+  bridge?.test_llm_connection();
+}
+
 export function onLlmSettingsChanged(fn: (settings: LlmSettings) => void) {
   bridge?.llm_settings_changed.connect((json: string) => fn(JSON.parse(json) as LlmSettings));
 }
@@ -216,6 +225,8 @@ export function standaloneLlmPreviewSettings(): LlmSettings {
     available: false,
     mock: false,
     enabled: true,
+    connection_check: 'idle',
+    connection_message: '',
   };
 }
 
@@ -366,9 +377,11 @@ export interface RoomDistribution {
   total_score: number;
 }
 
+/** Emitted on `distribution_result`. `source` is `llm` on success, `error` when the advisor failed or was unavailable. */
 export interface DistributionResult {
-  source: 'calculator' | 'llm';
+  source: 'calculator' | 'llm' | 'error';
   distribution: RoomDistribution | null;
+  error?: string | null;
 }
 
 export function getRoomDistribution(): Promise<RoomDistribution | null> {

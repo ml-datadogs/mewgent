@@ -94,6 +94,68 @@ def _load_breeding_context() -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def openai_verify_error_message(exc: BaseException) -> str:
+    """Map OpenAI / network errors to a short user-facing string (no secrets)."""
+    try:
+        from openai import APIConnectionError, APIStatusError, APITimeoutError
+    except ImportError:
+        return "Could not verify OpenAI connection."
+    if isinstance(exc, APIStatusError):
+        code = getattr(exc, "status_code", None)
+        if code == 401:
+            return "Invalid API key."
+        if code == 429:
+            return "Rate limited. Try again later."
+        if code is not None:
+            return f"OpenAI error ({code})."
+        return "OpenAI request failed."
+    if isinstance(exc, (APIConnectionError, APITimeoutError)):
+        return "Network error. Check your connection."
+    if isinstance(exc, TimeoutError):
+        return "Network error. Check your connection."
+    return "Could not verify OpenAI connection."
+
+
+def verify_openai_api_key(api_key: str) -> tuple[bool, str]:
+    """Lightweight authenticated GET /v1/models?limit=1 (same auth as chat).
+
+    Uses **httpx** with explicit connect/read timeouts. The OpenAI SDK's
+    ``models.list()`` iterator can ignore per-request timeouts on some setups,
+    leaving the UI stuck on "pending" forever.
+    """
+    import httpx
+
+    key = (api_key or "").strip()
+    if not key:
+        return False, "No API key configured."
+    timeout = httpx.Timeout(20.0, connect=5.0)
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            r = client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {key}"},
+                params={"limit": 1},
+            )
+    except httpx.TimeoutException:
+        log.warning("OpenAI connection verify timed out")
+        return False, "Network error. Check your connection."
+    except httpx.ConnectError:
+        log.warning("OpenAI connection verify: connect error")
+        return False, "Network error. Check your connection."
+    except httpx.RequestError as e:
+        log.warning("OpenAI connection verify failed: %s", type(e).__name__)
+        return False, "Could not verify OpenAI connection."
+
+    if r.status_code == 200:
+        return True, ""
+    if r.status_code == 401:
+        return False, "Invalid API key."
+    if r.status_code == 429:
+        return False, "Rate limited. Try again later."
+    log.warning("OpenAI connection verify HTTP %s", r.status_code)
+    return False, f"OpenAI error ({r.status_code})."
+
+
 def _cat_summary(cat: SaveCat) -> str:
     stats = (
         f"STR={cat.base_str} DEX={cat.base_dex} CON={cat.base_con} "
@@ -132,6 +194,8 @@ class LLMAdvisor:
         self._wiki_context: str = ""
         self._breeding_context: str = ""
         self._explanation_cache: dict[str, str] = {}
+        self._connection_check: str = "idle"
+        self._connection_message: str = ""
 
         if not enabled:
             log.info("LLM advisor disabled in config")
@@ -179,8 +243,13 @@ class LLMAdvisor:
         self._model = model.strip() or default_model
         if key_action == "set":
             self._user_api_key = key_value.strip() or None
+            if not key_value.strip():
+                self._connection_check = "idle"
+                self._connection_message = ""
         elif key_action == "clear":
             self._user_api_key = None
+            self._connection_check = "idle"
+            self._connection_message = ""
 
         save_user_llm(
             UserLlm(
@@ -207,7 +276,35 @@ class LLMAdvisor:
             "available": self.available,
             "mock": self._mock,
             "enabled": self._cfg_llm_enabled,
+            "connection_check": self._connection_check,
+            "connection_message": self._connection_message,
         }
+
+    def effective_api_key(self) -> str | None:
+        k = (self._user_api_key or "").strip() or os.environ.get(
+            "OPENAI_API_KEY", ""
+        ).strip()
+        return k or None
+
+    def connection_idle(self) -> None:
+        self._connection_check = "idle"
+        self._connection_message = ""
+
+    def connection_set_pending(self) -> None:
+        self._connection_check = "pending"
+        self._connection_message = ""
+
+    def connection_set_result(self, ok: bool, message: str = "") -> None:
+        if ok:
+            self._connection_check = "ok"
+            self._connection_message = ""
+        else:
+            self._connection_check = "failed"
+            self._connection_message = message or "Could not verify OpenAI connection."
+
+    def can_verify_openai(self) -> bool:
+        """True when real API (not mock/disabled); used for connection test worker."""
+        return self._cfg_llm_enabled and not self._mock
 
     @property
     def available(self) -> bool:

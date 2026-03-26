@@ -7,7 +7,6 @@ import { STAT_ORDER, STAT_LABELS, STAT_COLORS } from '@/types';
 import type { SaveCat, RoomStats, StatKey } from '@/types';
 import {
   getBreedingAdvice,
-  getRoomDistribution,
   getOverallRankings,
   suggestDistributionLlm,
   onDistributionResult,
@@ -21,8 +20,9 @@ import {
 interface BreedingPanelProps {
   cats: SaveCat[];
   roomStats: Record<string, RoomStats>;
-  llmAvailable: boolean;
   bridgeConnected: boolean;
+  /** When true, run LLM room optimize once on enter (same idea as team autofill). */
+  autoOptimize?: boolean;
 }
 
 const ROOM_DISPLAY: Record<string, string> = {
@@ -519,54 +519,58 @@ function RoomCard({
 
 // ── Main panel ────────────────────────────────────────────────────
 
-export function BreedingPanel({ cats, roomStats, llmAvailable, bridgeConnected }: BreedingPanelProps) {
+export function BreedingPanel({
+  cats,
+  roomStats,
+  bridgeConnected,
+  autoOptimize = false,
+}: BreedingPanelProps) {
   const [distribution, setDistribution] = useState<RoomDistribution | null>(null);
   const [selectedPair, setSelectedPair] = useState<{ a: number; b: number } | null>(null);
   const [advice, setAdvice] = useState<BreedingAdvice | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => Boolean(autoOptimize && bridgeConnected));
+  const [optimizeError, setOptimizeError] = useState<string | null>(null);
   const [rankings, setRankings] = useState<PairRanking[]>([]);
   const signalConnected = useRef(false);
+  const didAutoOptimize = useRef(false);
 
   useEffect(() => {
     if (signalConnected.current) return;
     signalConnected.current = true;
     onDistributionResult((result: DistributionResult) => {
       setLoading(false);
+      if (result.source === 'error' || result.error) {
+        setOptimizeError(result.error ?? 'Room distribution failed.');
+        return;
+      }
+      setOptimizeError(null);
       if (result.distribution) {
         setDistribution(result.distribution);
+        void getOverallRankings().then(setRankings);
+      } else {
+        setRankings([]);
       }
     });
   }, []);
 
-  const handleOptimize = useCallback(async () => {
+  useEffect(() => {
+    if (!autoOptimize || !bridgeConnected) return;
+    if (didAutoOptimize.current) return;
+    didAutoOptimize.current = true;
     setLoading(true);
+    setOptimizeError(null);
     setAdvice(null);
     setSelectedPair(null);
-    try {
-      const [dist, ranks] = await Promise.all([
-        getRoomDistribution(),
-        getOverallRankings(),
-      ]);
-      setDistribution(dist);
-      setRankings(ranks);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    suggestDistributionLlm();
+  }, [autoOptimize, bridgeConnected]);
 
-  const handleAiOptimize = useCallback(() => {
+  const handleOptimize = useCallback(() => {
+    if (!bridgeConnected) return;
     setLoading(true);
+    setOptimizeError(null);
     setAdvice(null);
     setSelectedPair(null);
-    if (bridgeConnected) {
-      suggestDistributionLlm();
-      return;
-    }
-    if (import.meta.env.DEV) {
-      window.setTimeout(() => setLoading(false), 15000);
-    } else {
-      setLoading(false);
-    }
+    suggestDistributionLlm();
   }, [bridgeConnected]);
 
   const handlePairClick = useCallback(async (aKey: number, bKey: number) => {
@@ -603,24 +607,29 @@ export function BreedingPanel({ cats, roomStats, llmAvailable, bridgeConnected }
         <div className="flex-1" />
         <Button
           size="sm"
+          variant="primary"
           onClick={handleOptimize}
           disabled={loading || !bridgeConnected}
           title={!bridgeConnected ? 'Requires Mewgent app' : undefined}
         >
           Optimize
         </Button>
-        {llmAvailable && (
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={handleAiOptimize}
-            disabled={loading || !bridgeConnected}
-            title={!bridgeConnected ? 'Requires Mewgent app' : undefined}
-          >
-            AI Optimize
-          </Button>
-        )}
       </div>
+
+      <AnimatePresence>
+        {optimizeError && !loading && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden px-1"
+          >
+            <p className="rounded-lg border border-poor/30 bg-poor/10 px-2 py-1.5 text-[10px] font-mono text-poor leading-snug">
+              {optimizeError}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Distribution total score */}
       <AnimatePresence>
@@ -749,7 +758,7 @@ export function BreedingPanel({ cats, roomStats, llmAvailable, bridgeConnected }
       </AnimatePresence>
 
       {/* Empty state */}
-      {!distribution && rankings.length === 0 && !loading && (
+      {!distribution && rankings.length === 0 && !loading && !optimizeError && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

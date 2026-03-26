@@ -12,7 +12,6 @@ interface OverviewProps {
   roster: RosterEntry[];
   collars: CollarDef[];
   roomStats: Record<string, RoomStats>;
-  llmAvailable: boolean;
   bridgeConnected: boolean;
   hideBreedTab?: boolean;
 }
@@ -27,7 +26,6 @@ export function Overview({
   roster,
   collars,
   roomStats,
-  llmAvailable,
   bridgeConnected,
   hideBreedTab,
 }: OverviewProps) {
@@ -130,7 +128,6 @@ export function Overview({
                       <BreedingPanel
                         cats={cats}
                         roomStats={roomStats}
-                        llmAvailable={llmAvailable}
                         bridgeConnected={bridgeConnected}
                       />
                     ) : (
