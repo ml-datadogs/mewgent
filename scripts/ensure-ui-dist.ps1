@@ -1,9 +1,12 @@
 # Rebuild ui/dist when UI sources changed since last build.
 # Uses git tree hash of ui/ to detect content changes reliably (timestamps are
 # unreliable after git pull/checkout).
+#
+# Use -AlwaysRebuild to remove ui/dist and run npm run build every time (e.g. from run.bat).
 param(
     [Parameter(Mandatory = $true)]
-    [string] $ProjectRoot
+    [string] $ProjectRoot,
+    [switch] $AlwaysRebuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,7 +29,17 @@ if (-not (Test-Path (Join-Path $ui "node_modules"))) {
     exit 0
 }
 
-$needBuild = -not (Test-Path $distIndex)
+$needBuild = $false
+if ($AlwaysRebuild) {
+    $distDir = Join-Path $ui "dist"
+    if (Test-Path $distDir) {
+        Remove-Item -LiteralPath $distDir -Recurse -Force
+    }
+    $needBuild = $true
+} elseif (-not (Test-Path $distIndex)) {
+    $needBuild = $true
+}
+
 if (-not $needBuild) {
     $currentHash = $null
     if (Get-Command git -ErrorAction SilentlyContinue) {
@@ -69,7 +82,11 @@ if (-not $needBuild) {
     exit 0
 }
 
-Write-Host "Rebuilding web UI (sources changed since last build)..."
+if ($AlwaysRebuild) {
+    Write-Host "Building web UI (clean rebuild)..."
+} else {
+    Write-Host "Rebuilding web UI (sources changed since last build)..."
+}
 Push-Location $ui
 try {
     npm run build

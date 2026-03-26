@@ -599,21 +599,10 @@ export function BreedingPanel({
 
   return (
     <div className={`flex flex-col gap-3 py-1${loading ? ' min-h-full' : ''}`}>
-      {/* Header + actions */}
-      <div className="flex items-center gap-2 px-1">
+      <div className="px-1">
         <span className="font-mono text-xs font-bold text-accent tracking-wider">
           BREEDING
         </span>
-        <div className="flex-1" />
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={handleOptimize}
-          disabled={loading || !bridgeConnected}
-          title={!bridgeConnected ? 'Requires Mewgent app' : undefined}
-        >
-          Optimize
-        </Button>
       </div>
 
       <AnimatePresence>
@@ -622,11 +611,20 @@ export function BreedingPanel({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden px-1"
+            className="overflow-hidden px-1 space-y-2"
           >
             <p className="rounded-lg border border-poor/30 bg-poor/10 px-2 py-1.5 text-[10px] font-mono text-poor leading-snug">
               {optimizeError}
             </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleOptimize}
+              disabled={!bridgeConnected}
+              title={!bridgeConnected ? 'Requires Mewgent app' : undefined}
+            >
+              Retry
+            </Button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -757,18 +755,31 @@ export function BreedingPanel({
         )}
       </AnimatePresence>
 
-      {/* Empty state */}
-      {!distribution && rankings.length === 0 && !loading && !optimizeError && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="parchment-empty rounded-lg flex items-center justify-center py-8"
-        >
-          <span className="text-[10px] font-mono text-text-dim opacity-60">
-            Click "Optimize" to find the best cat distribution across rooms
-          </span>
-        </motion.div>
-      )}
+      {/* Manual run when auto-optimize is off (e.g. roster overview embed) */}
+      {!autoOptimize &&
+        !distribution &&
+        rankings.length === 0 &&
+        !loading &&
+        !optimizeError && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="parchment-empty rounded-lg flex flex-col items-center justify-center gap-3 py-8 px-4"
+          >
+            <span className="text-center text-[10px] font-mono text-text-dim opacity-60">
+              Run AI room layout when the advisor is available, or open breeding from the main carousel for automatic layout.
+            </span>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={handleOptimize}
+              disabled={!bridgeConnected}
+              title={!bridgeConnected ? 'Requires Mewgent app' : undefined}
+            >
+              Run optimization
+            </Button>
+          </motion.div>
+        )}
     </div>
   );
 }
