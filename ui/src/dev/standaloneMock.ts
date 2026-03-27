@@ -1,7 +1,8 @@
 /**
  * Sample data for Vite-only dev (no QWebChannel). Matches shapes from the Python bridge.
  */
-import type { CollarDef, RoomStats, RosterEntry, TeamSlot } from '@/types';
+import type { TeamSynergyPayload } from '@/bridge';
+import type { CollarDef, EquipmentEntry, RoomStats, RosterEntry, TeamSlot } from '@/types';
 
 const MOCK_COLLARS: CollarDef[] = [
   {
@@ -54,6 +55,7 @@ function mockCat(
     base_lck: stats[6],
     abilities: ['Fireball', 'HealingTouch'],
     passives: ['NineLives'],
+    equipment: [] as EquipmentEntry[],
     status: 'in_house',
     breed_coefficient: 0.12,
     retired: false,
@@ -137,13 +139,66 @@ export const STANDALONE_TEAM: (TeamSlot | null)[] = [
   },
 ];
 
-export const STANDALONE_SYNERGY =
-  'Balanced four-role composition: Fighter tanks, Hunter deals ranged damage, Mage controls the field, and Cleric sustains. No stat overlap between members — each cat fills a unique niche.';
+export const STANDALONE_TEAM_SYNERGY: TeamSynergyPayload = {
+  synergy:
+    'Balanced four-role composition: Fighter tanks, Hunter deals ranged damage, Mage controls the field, and Cleric sustains. No stat overlap between members — each cat fills a unique niche.',
+  stash_tips: [
+    {
+      item_id: 'HeadWrap',
+      equip_on: 'Mittens',
+      reason: 'Regen + revive proc helps a squishy Mage.',
+      icon_url: 'https://mewgenics.wiki.gg/images/ITEM_Head_Wrap.svg?289282',
+      slot: 'Head',
+      effect: '+1 Health Regen. When downed, revive with 15% HP at the end of the round.',
+    },
+    {
+      item_id: 'MagicMirror',
+      equip_on: 'Chairman Meow',
+      reason: 'Reflect + Spookie on downed — good on a Hunter skirmisher.',
+      icon_url: 'https://mewgenics.wiki.gg/images/ITEM_Magic_Mirror.svg?430168',
+      slot: 'Face',
+      effect: '+20% chance to reflect projectiles.',
+    },
+    {
+      item_id: 'Bandage',
+      equip_on: 'flex',
+      reason: 'Extra sustain for whoever takes chip damage.',
+      icon_url: 'https://mewgenics.wiki.gg/images/ITEM_Bandage.svg?2938e5',
+      slot: 'Face',
+      effect: '-1 +2 Health Regen.',
+    },
+  ],
+};
 
 export const STANDALONE_SAVE_INFO = {
   day: 42,
   cat_count: cats.length,
   status: 'Browser preview — open via Mewgent for real save + AI',
+  inventory: {
+    backpack: [
+      {
+        item_id: 'Bandage',
+        effect: '-1 +2 Health Regen.',
+        icon_url: 'https://mewgenics.wiki.gg/images/ITEM_Bandage.svg?2938e5',
+        slot: 'Face',
+      },
+    ],
+    storage: [
+      {
+        item_id: 'HeadWrap',
+        effect: '+1Health Regen.When downed, revive with 15% HP at the end of the round.',
+        icon_url: 'https://mewgenics.wiki.gg/images/ITEM_Head_Wrap.svg?289282',
+        slot: 'Head',
+      },
+      {
+        item_id: 'MagicMirror',
+        effect: '+20% chance to reflect projectiles. Spawn a friendly Spookie when downed.',
+        icon_url: 'https://mewgenics.wiki.gg/images/ITEM_Magic_Mirror.svg?430168',
+        slot: 'Face',
+      },
+    ],
+    trash: [{ item_id: 'LuckyMask', effect: null, icon_url: null, slot: null }],
+  },
 };
 
 export const STANDALONE_ROOM_STATS: Record<string, RoomStats> = {

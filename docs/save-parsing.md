@@ -29,7 +29,7 @@ The overlay’s [`SaveWatcher`](../src/capture/save_watcher.py) polls the config
 | Table | Role |
 | --- | --- |
 | `properties` | `current_day`, `house_gold`, `house_food`, `owner_steamid` (typed as int or str when read). |
-| `files` | Binary blobs addressed by `key` (`house_state`, `pedigree`, `adventure_state`, `house_unlocks`, `unlocks`). |
+| `files` | Binary blobs addressed by `key` (`house_state`, `pedigree`, `adventure_state`, `house_unlocks`, `unlocks`, plus `inventory_backpack`, `inventory_storage`, `inventory_trash`). |
 | `furniture` | Per-item blobs: name, room, plus wiki-derived stat contributions. |
 | `cats` | Integer `key` (database cat id) and LZ4-wrapped `data` blob per cat. |
 
@@ -84,6 +84,9 @@ After decompression, `_parse_flat_cat_inner` walks the buffer in order (see `_pa
 | `adventure_state` | `_get_adventure_keys` | Same count-at-4 pattern; each entry is **`u64`**; cat db key is **high 32 bits** `(val >> 32) & 0xFFFFFFFF`. |
 | `house_unlocks` | `_get_unlocked_house_rooms` | Not a strict struct: **regex token scan** on ASCII-like identifiers, then **heuristic** mapping to internal room keys (`Floor1_Large`, `Attic`, etc.). |
 | `unlocks` | `_parse_unlocks` | **`u32` number of categories**; each category: **`u32` count**, **`u32` padding**, then **`count`** times **`i64` length** + **ASCII string**. **First three categories** map to unlocked classes, active abilities, passive abilities (by index **0, 1, 2** in the parsed list). |
+| `inventory_backpack` | `_parse_inventory_blob` | Often **four zero bytes** when empty. Otherwise encodes carried items; internal ids appear as **null-terminated ASCII** in the blob. |
+| `inventory_storage` | `_parse_inventory_blob` | House storage; **per-record byte length varies**, so the parser scans for embedded identifier-like strings (same filter as cat ability ids) instead of stepping a fixed stride. |
+| `inventory_trash` | `_parse_inventory_blob` | Discarded items; same string scan as storage. The leading **`u32` often matches entry count** in practice but is not relied on for parsing. |
 
 ## `furniture` rows and room stats
 
@@ -107,6 +110,8 @@ These are **not** a single field in one blob; they are computed in `read_save` o
 - **`children_keys`**: inverse of parent links.
 - **`lover_keys` / `hater_keys`**: filtered to keys that exist in the save.
 - **`generation`**: iterative depth from parents (cycles guarded; unresolved falls back to **0**).
+- **`inventory_*` lists** (wiki-backed JSON files: [`generated-data.md`](generated-data.md)): each entry is an `InventoryItem` with **`item_id`** (internal game name). Order follows discovery order in the blob; duplicates can appear if the save stores multiple stacks as separate records. Effect text comes from **`item_effects_wiki.json`**, table art URLs from **`item_icons_wiki.json`**, and the wiki **Slot** column from **`item_slots_wiki.json`** (same keys; regenerate with `uv run python tools/generate_item_effects_wiki.py`). Icons are absolute ``https://mewgenics.wiki.gg/images/ITEM_*.svg`` links for use in the Web UI. Stat modifiers append the wiki icon label (e.g. ``-99 Luck``). Shield-only rows use ``/wiki/Shield`` without a text label; those become ``+N Shield`` (e.g. Cursed Rock). Rows whose display name includes a parenthetical variant use keys like ``BrokenMirror_Trinket`` vs ``BrokenMirror_HeadArmor``. Save ids that differ from wiki keys (or have no matching row) are listed in **`ITEM_ID_ALIASES`** in [`src/data/item_effects.py`](../src/data/item_effects.py) (e.g. `SurvivalistGaiter` → `Survivalist'sGaiter`, `CatnipBig` → `LargeCatnipBaggy`, `DryBoneHat` → `DryBoneHelm`). Some game ids such as **`LuckyMask`** still have no row on the Items wiki page — effects/icons/slots stay empty until the wiki lists them or an alias is added.
+- **Cat `equipment`**: up to **five** internal item id strings read from the cat blob in the heuristic layout (when the `DefaultMove` layout is present this list is left empty). WebChannel **`cat`** JSON exposes **`equipment`** as `{ item_id, effect, icon_url, slot }[]` using the same lookup. **Team / collar scoring** still uses base stats only; numeric combat bonuses from items are not folded into `collar_score`. LLM team suggestions can use backpack + storage plus wiki slot/effect text to propose **`inventory_tips`** (merged into the synergy string in the UI).
 
 ## Data flow (implementation)
 

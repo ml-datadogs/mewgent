@@ -29,10 +29,13 @@ from src.data.collars import (
     save_cat_to_stats,
     unlocked_collars,
 )
+from src.data.item_effects import item_effect_entry
 from src.data.save_reader import RoomStats, SaveCat, SaveData
 from src.llm.advisor import (
     LLMAdvisor,
     build_llm_advisor,
+    inventory_item_ids_from_save,
+    team_synergy_ui_payload,
     verify_openai_api_key,
 )
 from src.ui.payload import (
@@ -42,7 +45,37 @@ from src.ui.payload import (
 )
 from src.utils.config_loader import AppConfig
 
+
+def _serialize_save_info(
+    save_data: SaveData | None, house_cat_count: int, status: str
+) -> dict[str, Any]:
+    empty_inv = {"backpack": [], "storage": [], "trash": []}
+    if save_data is None:
+        return {
+            "day": 0,
+            "cat_count": house_cat_count,
+            "status": status,
+            "inventory": empty_inv,
+        }
+    return {
+        "day": save_data.current_day,
+        "cat_count": house_cat_count,
+        "status": status,
+        "inventory": {
+            "backpack": [
+                item_effect_entry(x.item_id) for x in save_data.inventory_backpack
+            ],
+            "storage": [
+                item_effect_entry(x.item_id) for x in save_data.inventory_storage
+            ],
+            "trash": [item_effect_entry(x.item_id) for x in save_data.inventory_trash],
+        },
+    }
+
+
 log = logging.getLogger("mewgent.ui.bridge")
+
+_TEAM_SYNERGY_EMPTY_JSON = '{"synergy":"","stash_tips":[]}'
 
 
 class _LLMTeamWorker(QThread):
@@ -50,12 +83,22 @@ class _LLMTeamWorker(QThread):
 
     result_ready = Signal(object)
 
-    def __init__(self, advisor, cats, collars, base_scores, parent=None):
+    def __init__(
+        self,
+        advisor,
+        cats,
+        collars,
+        base_scores,
+        parent=None,
+        *,
+        inventory_item_ids: list[str] | None = None,
+    ):
         super().__init__(parent)
         self._advisor = advisor
         self._cats = cats
         self._collars = collars
         self._base_scores = base_scores
+        self._inventory_item_ids = inventory_item_ids
 
     def run(self):
         try:
@@ -63,6 +106,7 @@ class _LLMTeamWorker(QThread):
                 self._cats,
                 self._collars,
                 self._base_scores,
+                inventory_item_ids=self._inventory_item_ids,
             )
             self.result_ready.emit(result)
         except Exception:
@@ -206,13 +250,8 @@ class OverlayBridge(QObject):
 
     @Slot(result=str)
     def get_save_info(self) -> str:
-        sd = self._save_data
         return json.dumps(
-            {
-                "day": sd.current_day if sd else 0,
-                "cat_count": len(self._house_cats),
-                "status": self._status,
-            }
+            _serialize_save_info(self._save_data, len(self._house_cats), self._status)
         )
 
     @Slot(result=str)
@@ -330,14 +369,14 @@ class OverlayBridge(QObject):
     def clear_team(self) -> None:
         self._team_slots = [None, None, None, None]
         self._emit_team()
-        self.team_synergy_updated.emit("")
+        self.team_synergy_updated.emit(_TEAM_SYNERGY_EMPTY_JSON)
 
     @Slot()
     def autofill_team(self) -> None:
         if not self._house_cats or not self._available_collars:
             return
         self._team_slots = [None, None, None, None]
-        self.team_synergy_updated.emit("")
+        self.team_synergy_updated.emit(_TEAM_SYNERGY_EMPTY_JSON)
         available = [c for c in self._house_cats if c.age > 1 and not c.retired]
         used_cats: set[int] = set()
         used_collars: set[str] = set()
@@ -384,12 +423,14 @@ class OverlayBridge(QObject):
                 (c, collar_score(c, cs)) for c in self._available_collars
             ]
 
+        stash_ids = inventory_item_ids_from_save(self._save_data)
         self._llm_worker = _LLMTeamWorker(
             self._llm,
             available,
             self._available_collars,
             base_scores,
             self,
+            inventory_item_ids=stash_ids or None,
         )
         self._llm_worker.result_ready.connect(self._on_llm_team_result)
         self._llm_worker.start()
@@ -612,11 +653,7 @@ class OverlayBridge(QObject):
         )
         self.save_info_updated.emit(
             json.dumps(
-                {
-                    "day": save_data.current_day,
-                    "cat_count": len(self._house_cats),
-                    "status": self._status,
-                }
+                _serialize_save_info(save_data, len(self._house_cats), self._status)
             )
         )
         self._emit_team()
@@ -736,8 +773,15 @@ class OverlayBridge(QObject):
             self.autofill_team()
             return
 
-        team_entries = result.get("team", []) if isinstance(result, dict) else result
-        synergy = result.get("synergy", "") if isinstance(result, dict) else ""
+        if isinstance(result, dict):
+            team_entries = result.get("team", [])
+            synergy_payload = json.dumps(team_synergy_ui_payload(result))
+        elif isinstance(result, list):
+            team_entries = result
+            synergy_payload = _TEAM_SYNERGY_EMPTY_JSON
+        else:
+            team_entries = []
+            synergy_payload = _TEAM_SYNERGY_EMPTY_JSON
 
         self._team_slots = [None, None, None, None]
         cat_by_key = {c.db_key: c for c in self._house_cats}
@@ -761,7 +805,7 @@ class OverlayBridge(QObject):
             }
 
         self._emit_team()
-        self.team_synergy_updated.emit(synergy)
+        self.team_synergy_updated.emit(synergy_payload)
 
     @Slot(object)
     def _on_llm_breed_result(self, result: list[dict] | None) -> None:

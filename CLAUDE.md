@@ -16,17 +16,20 @@
 ```
 src/           # Python backend
   capture/     # Save file watcher (real + mock)
-  data/        # Save parser, stat extractor, collars, furniture
+  data/        # Save parser, collars, furniture; generated item_*_wiki.json (see docs/generated-data.md)
   breeding/    # Pair scoring and breeding calculator
-  llm/         # OpenAI advisor (team / breeding / room suggestions)
+  llm/         # OpenAI advisor (team / breeding / room; team prompt can use backpack+storage stash)
   ui/          # PySide6 overlay + QWebChannel bridge
   wiki/        # Game wiki scraper
   utils/       # Config loader, logging, update checker, LLM user key store
 ui/            # React + TypeScript frontend
   src/
     components/  # React panels, Radix UI wrappers, assets
+tools/         # Dev-only scripts (e.g. tools/generate_item_effects_wiki.py — not bundled)
+scripts/       # Optional dev helpers (PowerShell / shell)
 config/        # settings.yaml
 tests/         # pytest tests + fixtures
+docs/          # save-parsing.md, generated-data.md, …
 Taskfile.yml   # task check:ui / check:python (mirrors CI)
 ```
 
@@ -69,6 +72,16 @@ task check:ui      # npm ci + eslint + production Vite build (in ui/)
 task check:python  # ruff + format check + ty + pytest
 # or: task check    # both, sequentially
 ```
+
+If `task` is not on PATH (common on Windows without Task installed), run the same commands as in `Taskfile.yml` manually — see root [README.md](README.md) **Linting, type checking, and tests**.
+
+### Regenerating wiki item JSON
+
+```bash
+uv run python tools/generate_item_effects_wiki.py
+```
+
+Writes `src/data/item_effects_wiki.json`, `item_icons_wiki.json`, `item_slots_wiki.json`. Details: [docs/generated-data.md](docs/generated-data.md).
 
 ### Build release exe
 

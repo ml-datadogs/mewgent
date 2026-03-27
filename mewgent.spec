@@ -81,6 +81,9 @@ datas = [
     (str(ROOT / "config"), "config"),
     (str(ROOT / "images"), "images"),
     (str(ROOT / "src" / "llm" / "breeding_strategy_context.md"), "src/llm"),
+    (str(ROOT / "src" / "data" / "item_effects_wiki.json"), os.path.join("src", "data")),
+    (str(ROOT / "src" / "data" / "item_icons_wiki.json"), os.path.join("src", "data")),
+    (str(ROOT / "src" / "data" / "item_slots_wiki.json"), os.path.join("src", "data")),
 ]
 
 _env_file = ROOT / "src" / ".env"

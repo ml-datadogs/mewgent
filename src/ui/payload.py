@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.data.collars import CollarDef, collar_score, save_cat_to_stats
+from src.data.item_effects import item_effect_entry
 from src.data.save_reader import STAT_ORDER, SaveCat
 
 
@@ -25,6 +26,7 @@ def cat_to_dict(cat: SaveCat) -> dict[str, Any]:
         "base_lck": cat.base_lck,
         "abilities": cat.abilities,
         "passives": cat.passives,
+        "equipment": [item_effect_entry(eid) for eid in cat.equipment],
         "status": cat.status,
         "breed_coefficient": round(cat.breed_coefficient, 4),
         "retired": cat.retired,

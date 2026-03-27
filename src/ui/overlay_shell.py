@@ -203,6 +203,11 @@ class OverlayShell(QMainWindow):
             QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls,
             True,
         )
+        # Bundled UI is file:// — without this, <img src="https://…"> (wiki item SVGs) stays broken.
+        page.settings().setAttribute(
+            QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls,
+            True,
+        )
 
         page.setBackgroundColor(QColor(0, 0, 0, 0))
 

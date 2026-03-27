@@ -41,7 +41,7 @@ interface BridgeObject {
 
   roster_updated: { connect: (fn: (json: string) => void) => void };
   team_updated: { connect: (fn: (json: string) => void) => void };
-  team_synergy_updated: { connect: (fn: (synergy: string) => void) => void };
+  team_synergy_updated: { connect: (fn: (json: string) => void) => void };
   save_info_updated: { connect: (fn: (json: string) => void) => void };
   llm_status_changed: { connect: (fn: (status: string) => void) => void };
   collars_updated: { connect: (fn: (json: string) => void) => void };
@@ -96,9 +96,38 @@ export function getTeam(): Promise<(TeamSlot | null)[]> {
   return promiseSlot<(TeamSlot | null)[]>(bridge.get_team.bind(bridge));
 }
 
-export function getSaveInfo(): Promise<{ day: number; cat_count: number; status: string }> {
-  if (!bridge) return Promise.resolve({ day: 0, cat_count: 0, status: 'disconnected' });
-  return promiseSlot(bridge.get_save_info.bind(bridge));
+export interface InventoryEntry {
+  item_id: string;
+  effect: string | null;
+  icon_url: string | null;
+  slot: string | null;
+}
+
+export interface SaveInfoInventory {
+  backpack: InventoryEntry[];
+  storage: InventoryEntry[];
+  trash: InventoryEntry[];
+}
+
+export interface SaveInfo {
+  day: number;
+  cat_count: number;
+  status: string;
+  inventory: SaveInfoInventory;
+}
+
+const EMPTY_SAVE_INVENTORY: SaveInfoInventory = { backpack: [], storage: [], trash: [] };
+
+export function getSaveInfo(): Promise<SaveInfo> {
+  if (!bridge) {
+    return Promise.resolve({
+      day: 0,
+      cat_count: 0,
+      status: 'disconnected',
+      inventory: EMPTY_SAVE_INVENTORY,
+    });
+  }
+  return promiseSlot<SaveInfo>(bridge.get_save_info.bind(bridge));
 }
 
 export function setTeamSlot(slot: number, catDbKey: number, collarName: string) {
@@ -145,12 +174,62 @@ export function onTeamUpdated(fn: (team: (TeamSlot | null)[]) => void) {
   bridge?.team_updated.connect((json: string) => fn(JSON.parse(json)));
 }
 
-export function onTeamSynergyUpdated(fn: (synergy: string) => void) {
-  bridge?.team_synergy_updated.connect(fn);
+/** LLM team paragraph + suggested stash items (with wiki icon URLs from Python). */
+export interface TeamStashTip {
+  item_id: string;
+  equip_on: string;
+  reason: string;
+  icon_url: string | null;
+  slot: string | null;
+  effect: string | null;
 }
 
-export function onSaveInfoUpdated(fn: (info: { day: number; cat_count: number; status: string }) => void) {
-  bridge?.save_info_updated.connect((json: string) => fn(JSON.parse(json)));
+export interface TeamSynergyPayload {
+  synergy: string;
+  stash_tips: TeamStashTip[];
+}
+
+export const EMPTY_TEAM_SYNERGY_PAYLOAD: TeamSynergyPayload = {
+  synergy: '',
+  stash_tips: [],
+};
+
+export function parseTeamSynergyPayload(raw: string): TeamSynergyPayload {
+  const trimmed = raw.trim();
+  if (!trimmed) return EMPTY_TEAM_SYNERGY_PAYLOAD;
+  try {
+    const p = JSON.parse(trimmed) as Record<string, unknown>;
+    if (p && typeof p === 'object' && typeof p.synergy === 'string') {
+      const tips = p.stash_tips;
+      const stash_tips: TeamStashTip[] = Array.isArray(tips)
+        ? tips
+            .filter((x): x is Record<string, unknown> => x !== null && typeof x === 'object')
+            .map((x) => ({
+              item_id: String(x.item_id ?? ''),
+              equip_on: String(x.equip_on ?? ''),
+              reason: String(x.reason ?? ''),
+              icon_url: typeof x.icon_url === 'string' ? x.icon_url : null,
+              slot: typeof x.slot === 'string' ? x.slot : null,
+              effect: typeof x.effect === 'string' ? x.effect : null,
+            }))
+            .filter((t) => t.item_id.length > 0)
+        : [];
+      return { synergy: p.synergy, stash_tips };
+    }
+  } catch {
+    /* legacy: plain text before JSON payload */
+  }
+  return { synergy: raw, stash_tips: [] };
+}
+
+export function onTeamSynergyUpdated(fn: (payload: TeamSynergyPayload) => void) {
+  bridge?.team_synergy_updated.connect((json: string) => {
+    fn(parseTeamSynergyPayload(json));
+  });
+}
+
+export function onSaveInfoUpdated(fn: (info: SaveInfo) => void) {
+  bridge?.save_info_updated.connect((json: string) => fn(JSON.parse(json) as SaveInfo));
 }
 
 export function onLlmStatusChanged(fn: (status: string) => void) {

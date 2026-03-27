@@ -11,6 +11,7 @@ Binary format based on MewgenicsBreedingManager's proven reverse-engineering:
   personality traits, abilities, passives, disorders
 - Save-level blobs: house_state (room assignments), adventure_state,
   house_unlocks, pedigree (parent/child map)
+- Inventory blobs (files): inventory_backpack, inventory_storage, inventory_trash
 """
 
 from __future__ import annotations
@@ -65,6 +66,11 @@ ROOM_KEYS = tuple(ROOM_DISPLAY.keys())
 
 _JUNK_STRINGS = frozenset({"none", "null", "", "defaultmove", "default_move"})
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# Null-terminated internal item ids embedded in inventory_* blobs (variable record stride).
+_INVENTORY_ITEM_RE = re.compile(
+    rb"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]{2,40})(?=\x00)"
+)
 
 _VISUAL_MUTATION_FIELDS = [
     ("fur", 0),
@@ -222,6 +228,13 @@ class SaveCat:
 
 
 @dataclass
+class InventoryItem:
+    """A game item id parsed from an inventory_* save blob."""
+
+    item_id: str
+
+
+@dataclass
 class RoomStats:
     """Aggregated house stats for a single room, derived from furniture."""
 
@@ -261,6 +274,10 @@ class SaveData:
     unlocked_rooms: list[str] = field(default_factory=list)
     pedigree: dict[int, tuple[int | None, int | None]] = field(default_factory=dict)
     room_stats: dict[str, RoomStats] = field(default_factory=dict)
+
+    inventory_backpack: list[InventoryItem] = field(default_factory=list)
+    inventory_storage: list[InventoryItem] = field(default_factory=list)
+    inventory_trash: list[InventoryItem] = field(default_factory=list)
 
     @property
     def house_cats(self) -> list[SaveCat]:
@@ -574,7 +591,8 @@ def _parse_abilities(data: bytes, r: _BinaryReader, cat: SaveCat, db_key: int) -
             r.seek(found)
 
         cat.abilities = [a for a in (r.str() for _ in range(6)) if _valid_str(a)]
-        cat.equipment = [s for s in (r.str() for _ in range(4)) if _valid_str(s)]
+        # Five equipment strings in the heuristic layout (weapon / armor / trinkets, etc.).
+        cat.equipment = [s for s in (r.str() for _ in range(5)) if _valid_str(s)]
 
         passives: list[str] = []
         cat.disorders = []
@@ -822,6 +840,30 @@ def _parse_furniture(cursor: sqlite3.Cursor) -> dict[str, RoomStats]:
     return room_totals
 
 
+def _parse_inventory_blob(blob: bytes | None) -> list[InventoryItem]:
+    """Extract internal item ids from an ``inventory_*`` blob.
+
+    Records use a variable byte layout; each entry embeds a null-terminated
+    ASCII identifier. A regex scan finds those ids and filters with ``_IDENT_RE``.
+    An empty backpack is stored as four zero bytes (single u32 zero).
+    """
+    if blob is None or len(blob) < 4:
+        return []
+    if len(blob) == 4 and struct.unpack_from("<I", blob, 0)[0] == 0:
+        return []
+
+    out: list[InventoryItem] = []
+    for m in _INVENTORY_ITEM_RE.finditer(blob):
+        raw = m.group(1)
+        try:
+            s = raw.decode("ascii")
+        except UnicodeDecodeError:
+            continue
+        if _IDENT_RE.match(s):
+            out.append(InventoryItem(item_id=s))
+    return out
+
+
 def _parse_unlocks(
     cursor: sqlite3.Cursor,
 ) -> tuple[list[str], list[str], list[str]]:
@@ -931,6 +973,22 @@ def read_save(path: str | Path) -> SaveData:
         result.unlocked_abilities = abilities
         result.unlocked_passives = passives
 
+        # ── Inventory (files blobs) ───────────────────────────────────
+        for inv_key, field_name in (
+            ("inventory_backpack", "inventory_backpack"),
+            ("inventory_storage", "inventory_storage"),
+            ("inventory_trash", "inventory_trash"),
+        ):
+            try:
+                row = cursor.execute(
+                    "SELECT data FROM files WHERE key = ?", (inv_key,)
+                ).fetchone()
+            except sqlite3.Error:
+                blob = None
+            else:
+                blob = row[0] if row else None
+            setattr(result, field_name, _parse_inventory_blob(blob))
+
         # ── Furniture / room stats ────────────────────────────────────
         room_stats = _parse_furniture(cursor)
         room_stats.pop("", None)  # drop unplaced furniture
@@ -1020,6 +1078,8 @@ def _dump_save_debug(save: SaveData) -> None:
         f"  Abilities : {len(save.unlocked_abilities)} unlocked",
         f"  Passives  : {len(save.unlocked_passives)} unlocked",
         f"  Adventure : keys {save.adventure_keys or 'none'}",
+        f"  Inventory : backpack={len(save.inventory_backpack)}"
+        f" storage={len(save.inventory_storage)} trash={len(save.inventory_trash)}",
         "",
     ]
 

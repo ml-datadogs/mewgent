@@ -1,3 +1,13 @@
+/** Equipped item with wiki-sourced effect text when known. */
+export interface EquipmentEntry {
+  item_id: string;
+  effect: string | null;
+  /** Wiki-hosted ITEM_*.svg URL when known. */
+  icon_url: string | null;
+  /** Wiki Items table Slot column when known (Weapon, Head, Trinket, …). */
+  slot: string | null;
+}
+
 export interface SaveCat {
   db_key: number;
   name: string;
@@ -14,6 +24,8 @@ export interface SaveCat {
   base_lck: number;
   abilities: string[];
   passives: string[];
+  /** Up to five equipped item ids from the save (heuristic parse; DefaultMove layout leaves empty). */
+  equipment: EquipmentEntry[];
   status: string;
   breed_coefficient: number;
   retired: boolean;

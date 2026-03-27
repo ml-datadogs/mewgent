@@ -26,7 +26,7 @@
 - **Cat stats at a glance** — STR, DEX, CON, INT, SPD, CHA, LCK with visual charts
 - **Breeding advisor** — scores every pair by class fit, stat synergy, and genetic traits
 - **Team management** — track your roster, room assignments, and collar classes
-- **LLM-powered advice** — optional OpenAI integration for natural language breeding strategy
+- **LLM-powered advice** — optional OpenAI integration for breeding strategy, room layout, and team composition (including stash item ideas when inventory is available)
 - **Always-on-top overlay** — frameless, semi-transparent, toggle with `Ctrl+Shift+M`
 - **Auto-detects your save file** — no manual path configuration needed
 
@@ -107,6 +107,7 @@ Edit `config/settings.yaml` to customize behavior:
 ### Developer documentation
 
 - [Save file parsing](docs/save-parsing.md) — SQLite layout, LZ4 cat blobs, and how Mewgent reads `.sav` files
+- [Generated data assets](docs/generated-data.md) — wiki JSON under `src/data/`, regeneration, bundling
 
 ### Run with mock data (no game needed)
 
@@ -125,20 +126,34 @@ npm run dev      # Vite dev server on port 5173
 npm run build    # production build → ui/dist/
 ```
 
-### Linting & type checking
+### Linting, type checking, and tests
+
+With [Task](https://taskfile.dev/) installed (recommended mirror of CI):
 
 ```bash
-ruff check .             # Python lint
-ruff format --check .    # Python format check (no writes)
-ty check                 # Python type check
-cd ui && npm run lint    # TypeScript lint
+uv sync --dev
+task check          # check:ui (npm ci, eslint, vite build) then check:python
 ```
 
-### Tests
+Without Task, run the same steps manually:
 
 ```bash
-pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run ty check
+uv run pytest
+cd ui && npm ci && npm run lint && npm run build
 ```
+
+### Regenerate wiki item tables
+
+After the Items wiki page changes:
+
+```bash
+uv run python tools/generate_item_effects_wiki.py
+```
+
+See [docs/generated-data.md](docs/generated-data.md).
 
 ### Build release executable
 
@@ -156,18 +171,21 @@ The spec embeds a Windows icon ([`images/mewgent.ico`](images/mewgent.ico)) and 
 
 ```
 src/
-  main.py          # Entry point
+  __main__.py      # Entry (`python -m src.main`)
   capture/         # Save file watcher (real + mock)
-  data/            # Save parser, stat extractor, collars, furniture
+  data/            # Save parser, collars, furniture, item_*_wiki.json (generated)
   breeding/        # Pair scoring and breeding calculator
   ui/              # PySide6 overlay + Qt WebChannel bridge
-  llm/             # OpenAI advisor
+  llm/             # OpenAI advisor (team / breeding / room; stash tips for team)
   wiki/            # Game wiki scraper
   utils/           # Config loader, logging, update checker
-ui/                # React + TypeScript frontend
+ui/                # React + TypeScript frontend (Vite → dist/)
+tools/             # Dev-only scripts (wiki generator, save probes)
+scripts/           # Optional shell/PowerShell helpers
 config/            # settings.yaml
 tests/             # pytest tests + fixtures
-docs/              # Developer docs (e.g. save format)
+docs/              # Developer docs (save format, generated data)
+Taskfile.yml       # task check — same surface as CI
 ```
 
 ---
