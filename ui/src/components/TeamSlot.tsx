@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion';
 import { ClassIcon } from '@/components/ClassIcon';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
+import { StashTipWithTooltip } from '@/components/StashTipWithTooltip';
+import type { TeamStashTip } from '@/bridge';
 import { STAT_ORDER, STAT_LABELS, STAT_COLORS } from '@/types';
 import type { TeamSlot as TeamSlotType, CollarDef, SaveCat, StatKey } from '@/types';
 
@@ -10,6 +12,8 @@ interface TeamSlotProps {
   index: number;
   slot: TeamSlotType | null;
   collars: CollarDef[];
+  /** LLM stash suggestions for this cat (matched by name). */
+  suggestedStashTips?: TeamStashTip[];
 }
 
 function ScoreBadge({ value }: { value: number }) {
@@ -79,33 +83,27 @@ function StatGrid({ cat, collar }: { cat: SaveCat; collar: CollarDef | undefined
   );
 }
 
-function AbilityBadges({ abilities, passives }: { abilities: string[]; passives: string[] }) {
-  if (abilities.length === 0 && passives.length === 0) return null;
+function SuggestedStashRow({ tips, catName }: { tips: TeamStashTip[]; catName: string }) {
+  if (tips.length === 0) return null;
   return (
-    <div className="flex items-center gap-1.5 mt-1.5">
-      {abilities.length > 0 && (
-        <div
-          className="sketchy-frame rounded-sm px-1.5 py-0.5 flex items-center gap-1"
-          style={{ background: 'rgba(255,255,255,0.3)' }}
-        >
-          <span className="text-[9px] font-mono font-bold text-text-dim tracking-wider">ACT</span>
-          <span className="text-[11px] font-mono font-bold text-text">{abilities.length}</span>
-        </div>
-      )}
-      {passives.length > 0 && (
-        <div
-          className="sketchy-frame rounded-sm px-1.5 py-0.5 flex items-center gap-1"
-          style={{ background: 'rgba(255,255,255,0.3)' }}
-        >
-          <span className="text-[9px] font-mono font-bold text-text-dim tracking-wider">PAS</span>
-          <span className="text-[11px] font-mono font-bold text-text">{passives.length}</span>
-        </div>
-      )}
+    <div className="mt-1.5">
+      <span className="text-[8px] font-mono font-bold text-text-dim tracking-wider block mb-0.5">
+        AI stash
+      </span>
+      <div className="flex items-center gap-1 flex-wrap">
+        {tips.map((tip) => (
+          <StashTipWithTooltip
+            key={`${tip.item_id}-${tip.reason.slice(0, 24)}`}
+            tip={tip}
+            forCatName={catName}
+          />
+        ))}
+      </div>
     </div>
   );
 }
 
-export function TeamSlotCard({ index, slot, collars }: TeamSlotProps) {
+export function TeamSlotCard({ index, slot, collars, suggestedStashTips = [] }: TeamSlotProps) {
   const isEmpty = slot === null;
   const tilt = CARD_TILTS[index % CARD_TILTS.length];
 
@@ -194,8 +192,7 @@ export function TeamSlotCard({ index, slot, collars }: TeamSlotProps) {
           </div>
         </motion.div>
 
-        {/* Ability badges */}
-        <AbilityBadges abilities={slot.cat.abilities} passives={slot.cat.passives} />
+        <SuggestedStashRow tips={suggestedStashTips} catName={slot.cat.name} />
 
         {/* Explanation */}
         {slot.explanation && (

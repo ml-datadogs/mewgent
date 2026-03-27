@@ -11,6 +11,7 @@ import pytest
 from src.data.save_reader import (
     SaveData,
     _normalize_gender,
+    _parse_inventory_blob,
     _valid_str,
     find_save_files,
 )
@@ -51,6 +52,26 @@ class TestSaveProperties:
             "Floor2_Large",
             "Attic",
         ]
+
+
+class TestInventory:
+    def test_fixture_counts(self, save_data: SaveData):
+        assert len(save_data.inventory_backpack) == 0
+        assert len(save_data.inventory_storage) == 39
+        assert len(save_data.inventory_trash) == 12
+
+    def test_fixture_sample_ids(self, save_data: SaveData):
+        storage_ids = {x.item_id for x in save_data.inventory_storage}
+        trash_ids = {x.item_id for x in save_data.inventory_trash}
+        assert "HeadWrap" in storage_ids
+        assert "Whistle" in storage_ids
+        assert "LuckyMask" in trash_ids
+        assert "Antidote" in trash_ids
+
+    def test_parse_empty_backpack_blob(self):
+        assert _parse_inventory_blob(b"\x00\x00\x00\x00") == []
+        assert _parse_inventory_blob(b"") == []
+        assert _parse_inventory_blob(None) == []
 
 
 # ── Cat parsing (parametrized) ───────────────────────────────────────────

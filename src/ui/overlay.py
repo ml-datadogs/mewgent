@@ -41,7 +41,13 @@ from src.data.collars import (
     unlocked_collars,
 )
 from src.data.save_reader import SaveCat, SaveData
-from src.llm.advisor import LLMAdvisor, build_llm_advisor
+from src.llm.advisor import (
+    LLMAdvisor,
+    build_llm_advisor,
+    format_team_llm_synergy_text,
+    inventory_item_ids_from_save,
+    team_synergy_ui_payload,
+)
 from src.utils.config_loader import PROJECT_ROOT, AppConfig
 
 log = logging.getLogger("mewgent.ui.overlay")
@@ -539,7 +545,7 @@ class ClassFitWidget(QWidget):
 class _LLMTeamWorker(QThread):
     """Run LLM team suggestion off the main thread."""
 
-    finished = Signal(object)  # list[dict] | None
+    finished = Signal(object)  # dict | list | None
 
     def __init__(
         self,
@@ -547,11 +553,14 @@ class _LLMTeamWorker(QThread):
         cats: list[SaveCat],
         collars: list[CollarDef],
         parent=None,
+        *,
+        inventory_item_ids: list[str] | None = None,
     ) -> None:
         super().__init__(parent)
         self._advisor = advisor
         self._cats = cats
         self._collars = collars
+        self._inventory_item_ids = inventory_item_ids
 
     def run(self) -> None:
         base_scores: dict[int, list[tuple[CollarDef, float]]] = {}
@@ -562,6 +571,7 @@ class _LLMTeamWorker(QThread):
             self._cats,
             self._collars,
             base_scores,
+            inventory_item_ids=self._inventory_item_ids,
         )
         self.finished.emit(result)
 
@@ -1456,16 +1466,18 @@ class MewgentOverlay(QMainWindow):
         self._ai_team_btn.setEnabled(False)
         self._llm_status_label.setText("AI thinking...")
 
+        stash_ids = inventory_item_ids_from_save(self._save_data)
         self._llm_worker = _LLMTeamWorker(
             self._llm,
             available_cats,
             self._available_collars,
             self,
+            inventory_item_ids=stash_ids or None,
         )
         self._llm_worker.finished.connect(self._on_llm_team_result)
         self._llm_worker.start()
 
-    def _on_llm_team_result(self, result: list[dict] | None) -> None:
+    def _on_llm_team_result(self, result: dict | list | None) -> None:
         self._ai_team_btn.setEnabled(True)
         self._llm_status_label.setText("")
 
@@ -1473,10 +1485,23 @@ class MewgentOverlay(QMainWindow):
             self._autofill_team()
             return
 
+        if isinstance(result, dict):
+            team_entries = result.get("team", [])
+            synergy_text = format_team_llm_synergy_text(result)
+            _payload = team_synergy_ui_payload(result)
+            short = str(_payload.get("synergy", "")).strip()
+        elif isinstance(result, list):
+            team_entries = result
+            synergy_text = ""
+            short = ""
+        else:
+            self._autofill_team()
+            return
+
         self._team_slots = [None, None, None, None]
         cat_by_key = {c.db_key: c for c in self._house_cats}
 
-        for slot_idx, entry in enumerate(result[:4]):
+        for slot_idx, entry in enumerate(team_entries[:4]):
             db_key = entry.get("cat_db_key")
             collar_name = entry.get("collar_name", "")
             if db_key is None:
@@ -1495,6 +1520,12 @@ class MewgentOverlay(QMainWindow):
                 "score": score,
             }
 
+        if short or synergy_text:
+            line = (short or synergy_text).replace("\n", " ")
+            if len(line) > 120:
+                line = line[:117] + "…"
+            self._llm_status_label.setText(line)
+            self._llm_status_label.setToolTip(synergy_text or line)
         self._refresh_team_ui()
 
     def _request_explanations(self) -> None:

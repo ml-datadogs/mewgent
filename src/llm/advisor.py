@@ -10,8 +10,14 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from src.data.collars import CollarDef
-    from src.data.save_reader import SaveCat
     from src.utils.config_loader import LLMConfig
+
+from src.data.item_effects import (
+    item_effect_entry,
+    item_effect_for_id,
+    item_slot_for_id,
+)
+from src.data.save_reader import SaveCat, SaveData
 
 log = logging.getLogger("mewgent.llm.advisor")
 
@@ -163,10 +169,140 @@ def _cat_summary(cat: SaveCat) -> str:
     )
     abilities = ", ".join(cat.abilities) if cat.abilities else "none"
     passives = ", ".join(cat.passives) if cat.passives else "none"
+    if cat.equipment:
+        eparts: list[str] = []
+        for eid in cat.equipment:
+            eff = item_effect_for_id(eid)
+            slot = item_slot_for_id(eid)
+            slot_b = f" [{slot}]" if slot else ""
+            if eff:
+                eparts.append(f"{eid}{slot_b}: {eff}")
+            else:
+                eparts.append(f"{eid}{slot_b}" if slot_b else eid)
+        equip = " | ".join(eparts)
+    else:
+        equip = "none"
     return (
         f"{cat.name} (Lv{cat.level}, Age{cat.age}): {stats} "
-        f"| abilities: {abilities} | passives: {passives}"
+        f"| abilities: {abilities} | passives: {passives} | equipment: {equip}"
     )
+
+
+def dedupe_preserve_order(item_ids: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for iid in item_ids:
+        if not iid or iid in seen:
+            continue
+        seen.add(iid)
+        out.append(iid)
+    return out
+
+
+def inventory_item_ids_from_save(save_data: SaveData | None) -> list[str]:
+    """Backpack + storage item ids (deduped) for LLM stash context."""
+    if save_data is None:
+        return []
+    ids: list[str] = []
+    for row in save_data.inventory_backpack:
+        ids.append(row.item_id)
+    for row in save_data.inventory_storage:
+        ids.append(row.item_id)
+    return dedupe_preserve_order(ids)
+
+
+def stash_text_for_team_prompt(item_ids: list[str], *, max_items: int = 55) -> str:
+    """Compact backpack/storage listing for LLM team composition (wiki slot + effect)."""
+    lines: list[str] = []
+    for iid in item_ids[:max_items]:
+        slot = item_slot_for_id(iid)
+        eff = item_effect_for_id(iid)
+        slot_b = f" [{slot}]" if slot else ""
+        if eff:
+            short = eff if len(eff) <= 130 else eff[:127] + "..."
+            lines.append(f"- {iid}{slot_b}: {short}")
+        else:
+            lines.append(f"- {iid}{slot_b}")
+    if len(item_ids) > max_items:
+        lines.append(f"... ({len(item_ids) - max_items} more item ids omitted)")
+    return "\n".join(lines)
+
+
+def _normalize_inventory_tips(raw: Any) -> list[dict[str, str]]:
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in raw[:10]:
+        if isinstance(item, str) and item.strip():
+            out.append({"item_id": "", "equip_on": "", "reason": item.strip()})
+            continue
+        if not isinstance(item, dict):
+            continue
+        out.append(
+            {
+                "item_id": str(item.get("item_id", "")).strip(),
+                "equip_on": str(item.get("equip_on", "")).strip(),
+                "reason": str(item.get("reason", "")).strip(),
+            }
+        )
+    return out
+
+
+def team_synergy_ui_payload(result: dict[str, Any]) -> dict[str, Any]:
+    """Structured payload for WebChannel: synergy text + stash tips with wiki icons.
+
+    Each tip merges LLM fields with ``item_effect_entry`` (icon_url, slot, effect).
+    """
+    synergy = str(result.get("synergy", "")).strip()
+    raw_tips = result.get("inventory_tips")
+    tips_out: list[dict[str, Any]] = []
+    if isinstance(raw_tips, list):
+        for tip in raw_tips[:12]:
+            if not isinstance(tip, dict):
+                continue
+            iid = str(tip.get("item_id", "")).strip()
+            if not iid:
+                continue
+            meta = item_effect_entry(iid)
+            tips_out.append(
+                {
+                    "item_id": iid,
+                    "equip_on": str(tip.get("equip_on", "")).strip(),
+                    "reason": str(tip.get("reason", "")).strip(),
+                    "icon_url": meta.get("icon_url"),
+                    "slot": meta.get("slot"),
+                    "effect": meta.get("effect"),
+                }
+            )
+    return {"synergy": synergy, "stash_tips": tips_out}
+
+
+def format_team_llm_synergy_text(result: dict[str, Any]) -> str:
+    """Merge synergy paragraph and optional stash tips for plain-text tooltips (Qt overlay)."""
+    synergy = str(result.get("synergy", "")).strip()
+    tips = result.get("inventory_tips")
+    lines: list[str] = []
+    if synergy:
+        lines.append(synergy)
+    if isinstance(tips, list) and tips:
+        lines.append("")
+        lines.append("Stash / loadout ideas:")
+        for tip in tips:
+            if not isinstance(tip, dict):
+                continue
+            iid = str(tip.get("item_id", "")).strip()
+            who = str(tip.get("equip_on", "")).strip()
+            reason = str(tip.get("reason", "")).strip()
+            if not iid and not reason:
+                continue
+            who_bit = f" → {who}" if who else ""
+            if iid:
+                lines.append(
+                    f"• {iid}{who_bit}: {reason}" if reason else f"• {iid}{who_bit}"
+                )
+            elif reason:
+                lines.append(f"• {reason}")
+    return "\n".join(lines)
 
 
 class LLMAdvisor:
@@ -399,19 +535,26 @@ class LLMAdvisor:
         cats: list["SaveCat"],
         collars: list["CollarDef"],
         base_scores: dict[int, list[tuple["CollarDef", float]]],
+        *,
+        inventory_item_ids: list[str] | None = None,
     ) -> dict[str, Any] | None:
         """Suggest a balanced 4-cat team using LLM reasoning.
 
         Returns dict with keys:
           - "team": list of 4 dicts (cat_name, cat_db_key, collar_name, reason)
           - "synergy": 1-2 sentence team synergy analysis
+          - "inventory_tips": optional list of {item_id, equip_on, reason} stash ideas
         Returns None if LLM unavailable.
         """
         if not self.available or len(cats) < 2:
             return None
 
+        stash_ids = dedupe_preserve_order(inventory_item_ids or [])
+
         if self._mock:
-            return self._mock_team_composition(cats, collars, base_scores)
+            return self._mock_team_composition(
+                cats, collars, base_scores, stash_ids=stash_ids
+            )
 
         cat_summaries = "\n".join(_cat_summary(c) for c in cats[:20])
         collar_names = [c.name for c in collars]
@@ -423,11 +566,29 @@ class LLMAdvisor:
             top_str = ", ".join(f"{c.name}={s:.1f}" for c, s in top3)
             top_per_cat.append(f"  {cat.name} (key={cat.db_key}): {top_str}")
 
+        stash_block = ""
+        stash_rules = ""
+        if stash_ids:
+            stash_block = (
+                "\nItems in backpack + storage (not necessarily equipped on anyone):\n"
+                f"{stash_text_for_team_prompt(stash_ids)}\n"
+            )
+            stash_rules = (
+                "\n- After choosing the team, pick up to 5 items from that stash list "
+                "that especially fit the comp (cover weak stats, duplicate resist themes, "
+                "or fill an open wiki slot type the team lacks). "
+                'Use JSON key "inventory_tips": array of objects with item_id (must match '
+                'a line above), equip_on (exact cat name from your team, or "flex"), '
+                "reason (short). Use [] if nothing stands out. "
+                "Skip items you cannot justify from stats/effects.\n"
+            )
+
         prompt = (
             f"Select the best 4-cat team from these cats.\n\n"
             f"Available cats:\n{cat_summaries}\n\n"
             f"Top class scores per cat:\n" + "\n".join(top_per_cat) + "\n\n"
             f"Available classes: {', '.join(collar_names)}\n\n"
+            f"{stash_block}"
             f"Game context:\n{self._wiki_context}\n\n"
             f"Rules:\n"
             f"- Pick exactly 4 different cats with different classes\n"
@@ -435,12 +596,15 @@ class LLMAdvisor:
             f"and damage dealers where possible\n"
             f"- Each cat should be assigned their best-fitting class\n"
             f"- Consider ability synergies if abilities are listed\n"
-            f"- Consider passive trait synergies and how they complement the team\n\n"
-            f"Respond with ONLY a JSON object with two keys:\n"
+            f"- Consider passive trait synergies and how they complement the team\n"
+            f"- Equipment lines use [Weapon]/[Head]/[Trinket]/etc. from the wiki Slot column"
+            f" when known{stash_rules}\n"
+            f"Respond with ONLY a JSON object with keys:\n"
             f'  "team": array of 4 objects, each with cat_name (str), '
             f"cat_db_key (int), collar_name (str), reason (1 sentence)\n"
             f'  "synergy": 1-2 sentences analyzing the chosen team\'s '
             f"class/passive interactions and overall balance\n"
+            f'  "inventory_tips": array (see rules above; use [] if no stash or no picks)\n'
         )
 
         raw = self._chat(
@@ -460,14 +624,21 @@ class LLMAdvisor:
             result = json.loads(raw)
 
             if isinstance(result, list):
-                return {"team": result[:4], "synergy": ""}
+                return {"team": result[:4], "synergy": "", "inventory_tips": []}
             if isinstance(result, dict):
                 team = result.get("team", [])
                 if not isinstance(team, list) or len(team) == 0:
                     return None
+                tips = _normalize_inventory_tips(result.get("inventory_tips"))
+                if stash_ids:
+                    allowed = set(stash_ids)
+                    tips = [t for t in tips if t.get("item_id") in allowed]
+                else:
+                    tips = []
                 return {
                     "team": team[:4],
                     "synergy": str(result.get("synergy", "")),
+                    "inventory_tips": tips,
                 }
             return None
         except (json.JSONDecodeError, ValueError):
@@ -479,6 +650,8 @@ class LLMAdvisor:
         cats: list["SaveCat"],
         collars: list["CollarDef"],
         base_scores: dict[int, list[tuple["CollarDef", float]]],
+        *,
+        stash_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         time.sleep(0.8)
 
@@ -529,7 +702,18 @@ class LLMAdvisor:
             f"Passives complement the team's frontline and support roles."
         )
 
-        return {"team": team, "synergy": synergy}
+        tips: list[dict[str, str]] = []
+        if stash_ids and team:
+            pick = stash_ids[0]
+            tips.append(
+                {
+                    "item_id": pick,
+                    "equip_on": str(team[0].get("cat_name", "flex")),
+                    "reason": "Mock tip: consider equipping from stash for this comp.",
+                }
+            )
+
+        return {"team": team, "synergy": synergy, "inventory_tips": tips}
 
     # ── Explanations ─────────────────────────────────────────────────
 

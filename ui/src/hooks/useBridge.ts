@@ -21,14 +21,21 @@ import {
   onDistributionResult,
   standaloneLlmPreviewSettings,
 } from '@/bridge';
-import type { UpdateInfo, DistributionResult, LlmSettings } from '@/bridge';
+import type {
+  UpdateInfo,
+  DistributionResult,
+  LlmSettings,
+  SaveInfo,
+  TeamSynergyPayload,
+} from '@/bridge';
+import { EMPTY_TEAM_SYNERGY_PAYLOAD } from '@/bridge';
 import type { RosterEntry, CollarDef, TeamSlot, RoomStats } from '@/types';
 import {
   STANDALONE_COLLARS,
   STANDALONE_ROSTER,
   STANDALONE_ROOM_STATS,
   STANDALONE_SAVE_INFO,
-  STANDALONE_SYNERGY,
+  STANDALONE_TEAM_SYNERGY,
   STANDALONE_TEAM,
 } from '@/dev/standaloneMock';
 import {
@@ -43,8 +50,8 @@ export interface BridgeState {
   roster: RosterEntry[];
   collars: CollarDef[];
   team: (TeamSlot | null)[];
-  teamSynergy: string;
-  saveInfo: { day: number; cat_count: number; status: string };
+  teamSynergy: TeamSynergyPayload;
+  saveInfo: SaveInfo;
   llmStatus: string;
   updateInfo: UpdateInfo | null;
   roomStats: Record<string, RoomStats>;
@@ -58,8 +65,13 @@ export function useBridge(): BridgeState {
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [collars, setCollars] = useState<CollarDef[]>([]);
   const [team, setTeam] = useState<(TeamSlot | null)[]>([null, null, null, null]);
-  const [teamSynergy, setTeamSynergy] = useState('');
-  const [saveInfo, setSaveInfo] = useState({ day: 0, cat_count: 0, status: 'Waiting for save data...' });
+  const [teamSynergy, setTeamSynergy] = useState<TeamSynergyPayload>(EMPTY_TEAM_SYNERGY_PAYLOAD);
+  const [saveInfo, setSaveInfo] = useState<SaveInfo>({
+    day: 0,
+    cat_count: 0,
+    status: 'Waiting for save data...',
+    inventory: { backpack: [], storage: [], trash: [] },
+  });
   const [llmStatusFromBridge, setLlmStatusFromBridge] = useState('');
   const [mockTeamLlmStatus, setMockTeamLlmStatus] = useState('');
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -80,7 +92,7 @@ export function useBridge(): BridgeState {
           setRoster(STANDALONE_ROSTER);
           setCollars(STANDALONE_COLLARS);
           setTeam(STANDALONE_TEAM);
-          setTeamSynergy(STANDALONE_SYNERGY);
+          setTeamSynergy({ ...STANDALONE_TEAM_SYNERGY });
           setSaveInfo(STANDALONE_SAVE_INFO);
           setRoomStats(STANDALONE_ROOM_STATS);
           setLlmSettings(standaloneLlmPreviewSettings());
