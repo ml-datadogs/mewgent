@@ -54,6 +54,11 @@ def collar_to_dict(c: CollarDef) -> dict[str, Any]:
     }
 
 
+def serialize_catalog_cats(cats: list[SaveCat]) -> list[dict[str, Any]]:
+    """JSON-ready list of every cat in the save (house, adventure, historical, dead)."""
+    return [cat_to_dict(c) for c in cats]
+
+
 def compute_viable(
     house_cats: list[SaveCat],
     collars: list[CollarDef],

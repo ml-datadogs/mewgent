@@ -30,8 +30,8 @@ data/openai_user_settings.json
 debug_screenshots/
 *.log
 
-# Wiki scraper output
-wiki_data/
+# Wiki scraper images (large); wiki_data/text/*.md is tracked for the LLM advisor
+wiki_data/images/
 
 # React build output
 ui/dist/

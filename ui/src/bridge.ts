@@ -1,4 +1,4 @@
-import type { CollarDef, TeamSlot, RosterEntry, RoomStats } from './types';
+import type { CollarDef, TeamSlot, RosterEntry, RoomStats, SaveCat } from './types';
 
 declare global {
   interface Window {
@@ -12,13 +12,13 @@ declare global {
 
 interface BridgeObject {
   get_roster: (cb: (json: string) => void) => void;
+  get_catalog: (cb: (json: string) => void) => void;
   get_collars: (cb: (json: string) => void) => void;
   get_team: (cb: (json: string) => void) => void;
   get_save_info: (cb: (json: string) => void) => void;
   set_team_slot: (slot: number, cat_db_key: number, collar_name: string) => void;
   remove_team_slot: (slot: number) => void;
   clear_team: () => void;
-  autofill_team: () => void;
   autofill_team_llm: () => void;
   request_close: () => void;
   begin_drag: (screen_x: number, screen_y: number) => void;
@@ -40,6 +40,7 @@ interface BridgeObject {
   test_llm_connection: () => void;
 
   roster_updated: { connect: (fn: (json: string) => void) => void };
+  catalog_updated: { connect: (fn: (json: string) => void) => void };
   team_updated: { connect: (fn: (json: string) => void) => void };
   team_synergy_updated: { connect: (fn: (json: string) => void) => void };
   save_info_updated: { connect: (fn: (json: string) => void) => void };
@@ -84,6 +85,11 @@ function promiseSlot<T>(method: (cb: (json: string) => void) => void): Promise<T
 export function getRoster(): Promise<RosterEntry[]> {
   if (!bridge) return Promise.resolve([]);
   return promiseSlot<RosterEntry[]>(bridge.get_roster.bind(bridge));
+}
+
+export function getCatalog(): Promise<SaveCat[]> {
+  if (!bridge) return Promise.resolve([]);
+  return promiseSlot<SaveCat[]>(bridge.get_catalog.bind(bridge));
 }
 
 export function getCollars(): Promise<CollarDef[]> {
@@ -142,10 +148,6 @@ export function clearTeam() {
   bridge?.clear_team();
 }
 
-export function autofillTeam() {
-  bridge?.autofill_team();
-}
-
 export function autofillTeamLlm() {
   bridge?.autofill_team_llm();
 }
@@ -168,6 +170,10 @@ export function endDrag() {
 
 export function onRosterUpdated(fn: (roster: RosterEntry[]) => void) {
   bridge?.roster_updated.connect((json: string) => fn(JSON.parse(json)));
+}
+
+export function onCatalogUpdated(fn: (cats: SaveCat[]) => void) {
+  bridge?.catalog_updated.connect((json: string) => fn(JSON.parse(json) as SaveCat[]));
 }
 
 export function onTeamUpdated(fn: (team: (TeamSlot | null)[]) => void) {

@@ -99,6 +99,29 @@ function scoresFor(cat: RosterEntry['cat']): number[] {
   });
 }
 
+/** Full save catalog mock: in-house roster + historical / adventure / dead samples. */
+export const STANDALONE_CATALOG: RosterEntry['cat'][] = [
+  ...cats,
+  {
+    ...mockCat(101, 'Old Timer', 'Mage', 8, [2, 2, 3, 7, 4, 5, 3], ''),
+    status: 'historical',
+    generation: 4,
+    breed_coefficient: 0.28,
+  },
+  {
+    ...mockCat(102, 'Scout', 'Hunter', 5, [5, 8, 4, 2, 7, 3, 6], ''),
+    status: 'adventure',
+    generation: 2,
+    breed_coefficient: 0.15,
+  },
+  {
+    ...mockCat(103, 'Gone', 'Fighter', 0, [0, 0, 0, 0, 0, 0, 0], ''),
+    status: 'dead',
+    generation: 1,
+    breed_coefficient: 0,
+  },
+];
+
 export const STANDALONE_ROSTER: RosterEntry[] = cats.map((cat) => {
   const scores = scoresFor(cat);
   const best_idx = scores.indexOf(Math.max(...scores));

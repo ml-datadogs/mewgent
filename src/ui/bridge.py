@@ -42,6 +42,7 @@ from src.ui.payload import (
     cat_to_dict as _cat_dict,
     collar_to_dict as _collar_dict,
     compute_viable as _compute_viable,
+    serialize_catalog_cats as _serialize_catalog_cats,
 )
 from src.utils.config_loader import AppConfig
 
@@ -192,6 +193,7 @@ class OverlayBridge(QObject):
     """QObject exposed to JavaScript via QWebChannel."""
 
     roster_updated = Signal(str)
+    catalog_updated = Signal(str)
     team_updated = Signal(str)
     team_synergy_updated = Signal(str)
     save_info_updated = Signal(str)
@@ -239,6 +241,12 @@ class OverlayBridge(QObject):
     @Slot(result=str)
     def get_roster(self) -> str:
         return json.dumps(self._viable)
+
+    @Slot(result=str)
+    def get_catalog(self) -> str:
+        if self._save_data is None:
+            return "[]"
+        return json.dumps(_serialize_catalog_cats(self._save_data.cats))
 
     @Slot(result=str)
     def get_collars(self) -> str:
@@ -373,45 +381,12 @@ class OverlayBridge(QObject):
 
     @Slot()
     def autofill_team(self) -> None:
-        if not self._house_cats or not self._available_collars:
-            return
-        self._team_slots = [None, None, None, None]
-        self.team_synergy_updated.emit(_TEAM_SYNERGY_EMPTY_JSON)
-        available = [c for c in self._house_cats if c.age > 1 and not c.retired]
-        used_cats: set[int] = set()
-        used_collars: set[str] = set()
-
-        for slot_idx in range(4):
-            best_pick = None
-            best_score = -999.0
-            for cat in available:
-                if cat.db_key in used_cats:
-                    continue
-                cs = save_cat_to_stats(cat)
-                for c in self._available_collars:
-                    if c.name in used_collars:
-                        continue
-                    s = collar_score(c, cs)
-                    if s > best_score:
-                        best_score = s
-                        best_pick = (cat, c, s)
-            if best_pick is None:
-                break
-            cat, collar, score = best_pick
-            self._team_slots[slot_idx] = {
-                "cat": cat,
-                "collar": collar,
-                "score": score,
-            }
-            used_cats.add(cat.db_key)
-            used_collars.add(collar.name)
-
-        self._emit_team()
+        """Deprecated no-op: team autofill is LLM-only. Slot kept for WebChannel compatibility."""
 
     @Slot()
     def autofill_team_llm(self) -> None:
         if not self._llm.available:
-            self.autofill_team()
+            self.llm_status_changed.emit("AI advisor unavailable")
             return
         self.llm_status_changed.emit("AI thinking...")
 
@@ -648,6 +623,7 @@ class OverlayBridge(QObject):
         )
 
         self.roster_updated.emit(json.dumps(self._viable))
+        self.catalog_updated.emit(json.dumps(_serialize_catalog_cats(save_data.cats)))
         self.collars_updated.emit(
             json.dumps([_collar_dict(c) for c in self._available_collars])
         )
@@ -768,10 +744,10 @@ class OverlayBridge(QObject):
 
     @Slot(object)
     def _on_llm_team_result(self, result: dict | None) -> None:
-        self.llm_status_changed.emit("")
         if not result:
-            self.autofill_team()
+            self.llm_status_changed.emit("AI team suggestion failed")
             return
+        self.llm_status_changed.emit("")
 
         if isinstance(result, dict):
             team_entries = result.get("team", [])

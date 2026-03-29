@@ -3,6 +3,7 @@ import {
   initBridge,
   isConnected,
   getRoster,
+  getCatalog,
   getCollars,
   getTeam,
   getSaveInfo,
@@ -10,6 +11,7 @@ import {
   getRoomStats,
   getLlmSettings,
   onRosterUpdated,
+  onCatalogUpdated,
   onTeamUpdated,
   onTeamSynergyUpdated,
   onSaveInfoUpdated,
@@ -29,10 +31,11 @@ import type {
   TeamSynergyPayload,
 } from '@/bridge';
 import { EMPTY_TEAM_SYNERGY_PAYLOAD } from '@/bridge';
-import type { RosterEntry, CollarDef, TeamSlot, RoomStats } from '@/types';
+import type { RosterEntry, CollarDef, TeamSlot, RoomStats, SaveCat } from '@/types';
 import {
   STANDALONE_COLLARS,
   STANDALONE_ROSTER,
+  STANDALONE_CATALOG,
   STANDALONE_ROOM_STATS,
   STANDALONE_SAVE_INFO,
   STANDALONE_TEAM_SYNERGY,
@@ -48,6 +51,8 @@ export interface BridgeState {
   /** True when showing Vite-only mock data (no QWebChannel, import.meta.env.DEV) */
   uiPreview: boolean;
   roster: RosterEntry[];
+  /** Every cat in the save (all statuses); empty until a save is loaded. */
+  catalog: SaveCat[];
   collars: CollarDef[];
   team: (TeamSlot | null)[];
   teamSynergy: TeamSynergyPayload;
@@ -63,6 +68,7 @@ export function useBridge(): BridgeState {
   const [connected, setConnected] = useState(false);
   const [uiPreview, setUiPreview] = useState(false);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [catalog, setCatalog] = useState<SaveCat[]>([]);
   const [collars, setCollars] = useState<CollarDef[]>([]);
   const [team, setTeam] = useState<(TeamSlot | null)[]>([null, null, null, null]);
   const [teamSynergy, setTeamSynergy] = useState<TeamSynergyPayload>(EMPTY_TEAM_SYNERGY_PAYLOAD);
@@ -90,6 +96,7 @@ export function useBridge(): BridgeState {
         if (import.meta.env.DEV) {
           setUiPreview(true);
           setRoster(STANDALONE_ROSTER);
+          setCatalog(STANDALONE_CATALOG);
           setCollars(STANDALONE_COLLARS);
           setTeam(STANDALONE_TEAM);
           setTeamSynergy({ ...STANDALONE_TEAM_SYNERGY });
@@ -100,8 +107,9 @@ export function useBridge(): BridgeState {
         return;
       }
 
-      const [r, c, t, s, rs, llm] = await Promise.all([
+      const [r, catalogData, c, t, s, rs, llm] = await Promise.all([
         getRoster(),
+        getCatalog(),
         getCollars(),
         getTeam(),
         getSaveInfo(),
@@ -109,6 +117,7 @@ export function useBridge(): BridgeState {
         getLlmSettings(),
       ]);
       setRoster(r);
+      setCatalog(catalogData);
       setCollars(c);
       setTeam(t);
       setSaveInfo(s);
@@ -120,6 +129,7 @@ export function useBridge(): BridgeState {
       });
 
       onRosterUpdated(setRoster);
+      onCatalogUpdated(setCatalog);
       onTeamUpdated(setTeam);
       onTeamSynergyUpdated(setTeamSynergy);
       onSaveInfoUpdated(setSaveInfo);
@@ -144,6 +154,7 @@ export function useBridge(): BridgeState {
     connected,
     uiPreview,
     roster,
+    catalog,
     collars,
     team,
     teamSynergy,

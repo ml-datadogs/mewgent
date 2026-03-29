@@ -5,6 +5,7 @@ import { TitleBar } from '@/components/TitleBar';
 import { HomeCarousel, type AppMode } from '@/components/HomeCarousel';
 import { TeamPanel } from '@/components/TeamPanel';
 import { BreedingPanel } from '@/components/BreedingPanel';
+import { CatalogAnalyticsPanel } from '@/components/CatalogAnalyticsPanel';
 import { StatusBar } from '@/components/StatusBar';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -21,8 +22,20 @@ const pageVariants = {
 };
 
 export default function App() {
-  const { connected, uiPreview, roster, collars, team, teamSynergy, saveInfo, llmStatus, updateInfo, roomStats, llmSettings } =
-    useBridge();
+  const {
+    connected,
+    uiPreview,
+    roster,
+    catalog,
+    collars,
+    team,
+    teamSynergy,
+    saveInfo,
+    llmStatus,
+    updateInfo,
+    roomStats,
+    llmSettings,
+  } = useBridge();
   const [mode, setMode] = useState<'home' | AppMode>('home');
   const cats = roster.map((r) => r.cat);
   const didAutoFill = useRef(false);
@@ -250,6 +263,39 @@ export default function App() {
                     bridgeConnected={connected}
                     teamSynergy={teamSynergy}
                   />
+                </ScrollArea>
+              </motion.div>
+
+              <StatusBar status={saveInfo.status} />
+            </div>
+          </div>
+        )}
+
+        {mode === 'history' && (
+          <div className="h-full w-full flex flex-col overflow-hidden bg-paper rounded-xl">
+            <div className="flex flex-col gap-1.5 p-3 flex-1 overflow-hidden">
+              <TitleBar
+                day={saveInfo.day}
+                catCount={catalog.length > 0 ? catalog.length : saveInfo.cat_count}
+                connected={connected}
+                onBack={goHome}
+                borderless
+                trailingSlot={llmTitleSlot}
+              />
+
+              {updateInfo && <UpdateBanner info={updateInfo} />}
+
+              <motion.div
+                key="history"
+                variants={pageVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{ duration: 0.25 }}
+                className="flex-1 min-h-0 overflow-auto"
+              >
+                <ScrollArea className="h-full">
+                  <CatalogAnalyticsPanel cats={catalog} />
                 </ScrollArea>
               </motion.div>
 

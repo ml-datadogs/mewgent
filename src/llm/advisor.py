@@ -74,9 +74,10 @@ _MOCK_EXPLANATIONS = [
 
 
 def _load_wiki_context() -> str:
-    """Load class and ability descriptions from scraped wiki data."""
+    """Load stat, class, and ability descriptions from scraped wiki data (wiki.gg)."""
     parts: list[str] = []
-    for name in ("classes", "abilities"):
+    # stats.md from https://mewgenics.wiki.gg/wiki/Stats — run: uv run python -m src.wiki
+    for name in ("stats", "classes", "abilities"):
         path = _WIKI_DIR / f"{name}.md"
         if path.exists():
             text = path.read_text(encoding="utf-8")
@@ -163,6 +164,7 @@ def verify_openai_api_key(api_key: str) -> tuple[bool, str]:
 
 
 def _cat_summary(cat: SaveCat) -> str:
+    ac = (cat.active_class or "").strip() or "unknown"
     stats = (
         f"STR={cat.base_str} DEX={cat.base_dex} CON={cat.base_con} "
         f"INT={cat.base_int} SPD={cat.base_spd} CHA={cat.base_cha} LCK={cat.base_lck}"
@@ -183,7 +185,7 @@ def _cat_summary(cat: SaveCat) -> str:
     else:
         equip = "none"
     return (
-        f"{cat.name} (Lv{cat.level}, Age{cat.age}): {stats} "
+        f"{cat.name} (Lv{cat.level}, Age{cat.age}, class={ac}): {stats} "
         f"| abilities: {abilities} | passives: {passives} | equipment: {equip}"
     )
 
@@ -556,11 +558,11 @@ class LLMAdvisor:
                 cats, collars, base_scores, stash_ids=stash_ids
             )
 
-        cat_summaries = "\n".join(_cat_summary(c) for c in cats[:20])
+        cat_summaries = "\n".join(_cat_summary(c) for c in cats)
         collar_names = [c.name for c in collars]
 
         top_per_cat: list[str] = []
-        for cat in cats[:20]:
+        for cat in cats:
             scores = base_scores.get(cat.db_key, [])
             top3 = sorted(scores, key=lambda x: x[1], reverse=True)[:3]
             top_str = ", ".join(f"{c.name}={s:.1f}" for c, s in top3)
@@ -820,7 +822,7 @@ class LLMAdvisor:
         cat_summaries = "\n".join(
             f"  {_cat_summary(c)} | gender={c.gender} "
             f"| inbreeding={c.breed_coefficient:.2f} | room={c.room}"
-            for c in cats[:20]
+            for c in cats
         )
 
         room_context = ""

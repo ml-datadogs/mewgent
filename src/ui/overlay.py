@@ -883,20 +883,6 @@ class MewgentOverlay(QMainWindow):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
 
-        self._autofill_btn = QPushButton("Auto-fill best team")
-        self._autofill_btn.setFont(QFont(FONT_UI, 8))
-        self._autofill_btn.setFixedHeight(26)
-        self._autofill_btn.setStyleSheet(f"""
-            QPushButton {{
-                color: {CLR_TEXT}; background: {CLR_BG_DIM};
-                border: 1px solid {CLR_BORDER}; border-radius: 4px;
-                padding: 2px 14px;
-            }}
-            QPushButton:hover {{ background: rgba(0, 0, 0, 18); }}
-        """)
-        self._autofill_btn.clicked.connect(self._autofill_team)
-        btn_row.addWidget(self._autofill_btn)
-
         self._ai_team_btn = QPushButton("AI Team")
         self._ai_team_btn.setFont(QFont(FONT_UI, 8))
         self._ai_team_btn.setFixedHeight(26)
@@ -1410,42 +1396,6 @@ class MewgentOverlay(QMainWindow):
         slot["score"] = collar_score(c, cs)
         self._refresh_team_ui()
 
-    def _autofill_team(self) -> None:
-        if not self._house_cats or not self._available_collars:
-            return
-
-        self._team_slots = [None, None, None, None]
-        available_cats = [c for c in self._house_cats if c.age > 1 and not c.retired]
-        used_cat_keys: set[int] = set()
-        used_collar_names: set[str] = set()
-
-        for slot_idx in range(4):
-            best_pick = None
-            best_score = -999.0
-            for cat in available_cats:
-                if cat.db_key in used_cat_keys:
-                    continue
-                cs = save_cat_to_stats(cat)
-                for c in self._available_collars:
-                    if c.name in used_collar_names:
-                        continue
-                    s = collar_score(c, cs)
-                    if s > best_score:
-                        best_score = s
-                        best_pick = (cat, c, s)
-            if best_pick is None:
-                break
-            cat, collar, score = best_pick
-            self._team_slots[slot_idx] = {
-                "cat": cat,
-                "collar": collar,
-                "score": score,
-            }
-            used_cat_keys.add(cat.db_key)
-            used_collar_names.add(collar.name)
-
-        self._refresh_team_ui()
-
     # ── LLM-powered team building ────────────────────────────────────
 
     def _autofill_team_llm(self) -> None:
@@ -1455,12 +1405,12 @@ class MewgentOverlay(QMainWindow):
             or not self._house_cats
             or not self._available_collars
         ):
-            self._autofill_team()
+            self._llm_status_label.setText("AI advisor unavailable")
             return
 
         available_cats = [c for c in self._house_cats if c.age > 1 and not c.retired]
         if len(available_cats) < 2:
-            self._autofill_team()
+            self._llm_status_label.setText("Need at least 2 eligible cats")
             return
 
         self._ai_team_btn.setEnabled(False)
@@ -1482,7 +1432,7 @@ class MewgentOverlay(QMainWindow):
         self._llm_status_label.setText("")
 
         if not result:
-            self._autofill_team()
+            self._llm_status_label.setText("AI team suggestion failed")
             return
 
         if isinstance(result, dict):
@@ -1495,7 +1445,7 @@ class MewgentOverlay(QMainWindow):
             synergy_text = ""
             short = ""
         else:
-            self._autofill_team()
+            self._llm_status_label.setText("AI team suggestion failed")
             return
 
         self._team_slots = [None, None, None, None]
@@ -1510,7 +1460,7 @@ class MewgentOverlay(QMainWindow):
             collar = collar_by_name(collar_name)
             if cat is None or collar is None:
                 continue
-            if cat.age <= 1:
+            if cat.age <= 1 or cat.retired:
                 continue
             cs = save_cat_to_stats(cat)
             score = collar_score(collar, cs)

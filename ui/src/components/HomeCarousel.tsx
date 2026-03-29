@@ -3,7 +3,7 @@ import { motion, useMotionValue, animate } from 'framer-motion';
 import { UpdateCheckButton } from '@/components/UpdateCheckButton';
 import { requestClose, beginDrag, updateDrag, endDrag, openUrl } from '@/bridge';
 
-export type AppMode = 'breeding' | 'team';
+export type AppMode = 'breeding' | 'team' | 'history';
 
 interface HomeCarouselProps {
   onSelect: (mode: AppMode) => void;
@@ -17,6 +17,7 @@ interface HomeCarouselProps {
 const CARDS: { mode: AppMode; title: string; image: string }[] = [
   { mode: 'team', title: 'TEAM', image: './mainscreens/team.png' },
   { mode: 'breeding', title: 'BREEDING', image: './mainscreens/breeding.png' },
+  { mode: 'history', title: 'HISTORY', image: './mainscreens/history.png' },
 ];
 
 const DRAG_THRESHOLD = 60;
